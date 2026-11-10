@@ -1,0 +1,285 @@
+# LiteBisect -- ROADMAP (DRAFT)
+
+> **Status: DRAFT, 2026-11-10.** Nothing here is a package. `Bisect.draft.js` is a first sketch
+> that needs research, review, measurement and a real test suite before any of it ships. Every
+> speed number below is copied from LiteLogLogN's research (one CPU, REPORTED tier) and has NOT
+> been re-run against this draft. Package name `@zakkster/lite-bisect`: free in the suite folder
+> (LiteSearch is fuzzy text search); npm availability not checked.
+>
+> **LEDGER.md** holds the laws and lessons this package inherits from LiteLogLogN, LiteSignal and
+> LiteFastBit32, plus its own refusals and defects. Every planner, research and audit brief
+> quotes the LEDGER laws that bear on it.
+
+## 1. The question: one adaptive search (like Timsort), or a menu of measured functions?
+
+Both, split by one rule: **a kernel adapts only to what it can see cheaply at call time; anything
+it cannot see is the caller's documented choice.**
+
+Timsort is the model for that rule, not for "use the best of everything". It adapts to what it
+can detect while running: array length (insertion sort below ~64), existing runs, and long
+one-sided streaks (galloping). It never guesses at things it cannot observe.
+
+Applied to search:
+
+| Layer | Who decides | On what | Draft kernels |
+|---|---|---|---|
+| A. automatic | the kernel | range length; a hint (previous answer) the caller passes | `lowerBound` (linear below `LINEAR_MAX`, else branchless); `lowerBoundHint` (gallop from the hint, then branchless) |
+| B. documented choice | the caller | does the result feed a write? lower or upper bound? | `lowerBoundBranchy` / `lowerBoundBranchless`, the `upper*` twins, `lowerBoundLinear` |
+| C. documented structure | the caller | is the array static? | `buildEytzinger` + `lowerBoundEytzinger` |
+
+Why B and C cannot be automatic, from measurements already in the suite:
+
+- **Feeds a write.** Branchless reads 2-4x faster alone, but an `add(x)` + `delete(x)` pair was
+  1.09-1.22x **slower** with it. The position feeds a `copyWithin` (LiteLogLogN RESEARCH 18). A
+  kernel cannot see what its caller does with the answer.
+- **Static or not.** Eytzinger needs a full rebuild after any write. Only the caller knows
+  whether writes happen.
+- **Element type.** One shared function fed `Float64Array` in one package and `Uint16Array` in
+  another loses its single-type feedback on the array reads (V8.md, ElementsKinds.md). So
+  per-type kernels are a packaging decision, not a runtime switch (R-4).
+
+Honest expectation for layer A: the length switch may earn almost nothing. Branchless already
+ties linear at 8 keys and wins from 16 (S0). The hint gallop is the layer-A idea with the most
+potential (§2: most per-frame call sites query near their last answer), but it is unmeasured.
+
+## 2. Inventory (2026-11-10, two sweeps of main source files, read-only)
+
+**28 sorted-array bisection loops in 13 main files.** Excluded:
+
+- 10 value bisections (Color, Hueforge, Sketch, A11yColor, Repair chroma);
+- 3 predicate searches with no array (WaveletTree `_select0` / `_select1`, XFastTrie `_near`);
+- the Virtual Fenwick descent;
+- quickselect, heap and tree walks.
+
+| Package | file:line | Bound | Array | Result use | Notes |
+|---|---|---|---|---|---|
+| Charts | Charts.js:400 `bisectNearest` | lower, then nearest | Float32/Float64 series `xs` | read | pointer hover |
+| Ohlc | Ohlc.js:392, 418 | lower, upper | Float64Array **ring, masked index** | read | kernel shape does not fit (R-6) |
+| Keyframe | Keyframe.js:59 `binarySearch` | segment | caller array at an offset | read | linear for n <= 16 at the call site; per frame |
+| MotionPath | MotionPath.js:167, 203 | upper | Float32Array LUT (default 256) | read | per frame |
+| O1 | O1.js:5455, 5508 RankSelect | upper | Uint32Array; 5508 computed key | read | linear for hi - lo <= 16 |
+| O1 | O1.js:5767 EliasFano.nextGEQ | lower | via `_readLow(i)` method | read | not a plain array |
+| Room | Room.js:3610 `_listLowerBound` | lower on (pos, peerId) | Array of objects | **feeds splice** | compound key |
+| Virtual | Virtual.js:498, 931 | upper | Float64Array; plain number[] | read | per scroll frame |
+| Scrollforge | Scrollforge.js:1310 | segment | Float64Array | read | per frame |
+| Chartforge | Repair.js:98 | segment | `cum` (type not traced) | read | |
+| LogN | LogN.js:6502 SortedArray._lb | lower | Float64Array | **feeds copyWithin** (insert / delete) | 8 callers |
+| LogN | LogN.js:7538, 7558 MergeSortTree | upper, lower | Float64Array runs | read | doc finding below |
+| LogN | LogN.js:7786, 8170, 8183, 8196 WaveletTree | exact / lower / upper | Float64Array `_remap` | read | |
+| LogLogN | LogLogN.js:1138 YFastTrie._lb | lower | Uint32Array buckets | **feeds copyWithin** | |
+| LogLogN | LogLogN.js:2424 `_lb16` | lower | Uint16Array | **feeds copyWithin** | the only branchless one |
+| LogLogN | LogLogN.js:2435 `_lbRun`; 3679, 3691 | lower over runs | Uint16Array, key `start + len` | feeds copyWithin (2435) | compound key |
+| LogLogN | LogLogN.js:3628, 3635 intersect | gallop + exact | Uint16Array | read | RESEARCH 17.5: branchless was a LEAVE |
+
+What the inventory says:
+
+1. **Element types:** Float64Array 12, Uint16Array 6, Uint32Array 3, Float32Array 2, plain or
+   untraced arrays 3, objects 1, method-read 1. At least 4 typed kinds, so per-type kernels
+   matter (R-4).
+2. **Almost every site searches a sub-range** (offset, run, bucket). The API must be
+   `(a, lo, hi, x)`, never `(a, x)`.
+3. **5 sites feed a write.** These are exactly the RESEARCH 18 case: keep branchy there unless
+   measured otherwise.
+4. **About 8 sites run per frame on a query that moves a little per frame** (Keyframe,
+   MotionPath x2, Scrollforge, Charts hover, Virtual x2, maybe Ohlc). This is assumed from what
+   the packages do, not traced. These are the hint-gallop candidates (R-2).
+5. **About 6 sites do not fit a plain kernel:** compound or computed keys (Room, `_lbRun` x3,
+   O1 5508), the masked ring (Ohlc x2), and the method-read (EliasFano). Out of scope unless R-6
+   says otherwise.
+6. **Only 1 of 28 is branchless today** (`_lb16`, adopted 2026-11-08). 2 sites already put a
+   linear scan in front (Keyframe, O1 RankSelect), each with its own threshold of 16.
+
+Doc finding, not fixed here: LogN.js:7528 calls `MergeSortTree._lb` a "Branch-free lower-bound".
+The loop is branchy (`if (T[mid] <= x)`) and counts `<= x`, which is an upper bound. "Branch-free"
+there means "no early exit on equality". A one-line wording fix for the next LogN doc pass.
+
+## 3. Evidence carried over (LiteLogLogN RESEARCH.md; Apple M4 Pro, Node 26.8.2; not re-run)
+
+| Source | Finding | Tier there |
+|---|---|---|
+| 16.1 S0 | Predecessor over k keys: linear wins at k <= 4, ties at 8; Eytzinger wins from 16 (1.2-4.8x over linear, 1.5-2.6x over branchy); branchless within noise of Eytzinger up to k = 64 (all in L1) | PRELIMINARY |
+| 16.2 | The crossover depends on the PAIR compared: linear vs branchy at ~40-64, vs branchless or Eytzinger at ~16 | PRELIMINARY |
+| 16.2 | One compilation per kernel shows up to ~20% A/A bias; time 3 independent compilations per column | finding |
+| 17.2 L1 | Branchless lower bound beats branchy in all 32 read cells (0.49-0.76x); top-bits offset LUT + branchless 0.22-0.35x (T = 6) | QUIET, 1 run |
+| 17.3 | Bytecode sizes: branchless body 98 B (Maglev single-inline limit 100 B); a LUT search 153 B; a LUT write 532 B (over TurboFan's 460 B, so never inlined) | DETERMINISTIC on that Node |
+| 17.3 | Prior art (Khuong-Morin arXiv:1509.05053): small n -> sorted + branchless; Eytzinger only for large STATIC arrays; JS has no prefetch, so the prefetched Eytzinger variant has no JS analogue | literature |
+| 18 | Branchless loses 1.09-1.22x when its result feeds `copyWithin` (the data flow, not the search) | QUIET + strict, REPORTED |
+
+## 4. What the draft has, and its only check
+
+`Bisect.draft.js`: Float64Array kernels (lower bound linear / branchy / branchless, upper bound
+branchy / branchless), adaptive `lowerBound`, `lowerBoundHint`, and Eytzinger build + search.
+They come from the measured S0 / L1 kernels, adapted to `[lo, hi)`. Contract in the file header:
+NaN query -> `lo`, no validation, no throw, no allocation (allocation unmeasured).
+
+`draft-check.mjs` (`node draft-check.mjs [seed]`):
+
+- **Oracle:** a naive scan written from the definition.
+- **Inputs:** random sorted arrays with ~30% duplicates; every sub-range for n <= 24; random
+  sub-ranges up to n = 300; queries at, between and outside the values, plus NaN and
+  +-Infinity; hints in range, at both ends, outside, NaN, and at the answer.
+- **Result:** seeds 1, 12345, 777, 99 all `ok`, 45-48 M checks each.
+- **Teeth:** 6 mutants, all killed (scratchpad, 2026-11-10):
+  - branchless `<` -> `<=`;
+  - the gallop's clamp removed;
+  - Eytzinger `rank[0] = 0`;
+  - linear `<` -> `<=`;
+  - the empty-range guard removed;
+  - the hint's direction test `<` -> `<=`.
+- **Bug it caught:** `lowerBoundHint` galloped left with `a[l] >= x`, which returned the hint
+  for a NaN query. Fixed to `!(a[l] < x)`, the same predicate as every other kernel.
+
+## 5. Open questions (research before any code is final)
+
+- **R-1 Does the length switch earn its bytes?** Compare `lowerBound` vs `lowerBoundBranchless`
+  at n = 1..32, using the 16.2 method (3 compilations, A/A, a must-fail control). Kill rule
+  fixed before the run: drop layer A's switch unless it wins >= 1.10x somewhere AND loses
+  nowhere beyond the A/A band.
+- **R-2 Hint gallop vs a fresh search** on coherent query streams: random walk with step d =
+  1, 4, 64, n/8, plus a uniform-random control where the hint must lose or tie. Use real
+  Keyframe / MotionPath / Virtual traces if they exist.
+- **R-3 Branchy vs branchless at FEEDS-WRITE sites** outside LogLogN (SortedArray, YFastTrie):
+  does RESEARCH 18 transfer?
+- **R-4 Per-type packaging.**
+  - Option 1: hand-written literals per element type (F64, F32, U32, U16, I32).
+  - Option 2: a factory. Believed to share ONE feedback vector across closures from the same
+    literal, so it would NOT separate types. Verify with LiteUtils `ic-diff.sh`.
+  - Option 3: generated source, i.e. `new Function` with unique source (the alloc-per-op
+    driver lesson). CSP-hostile.
+  - Measure what a mixed-type app costs with option 1 vs a single shared function.
+- **R-5 Eytzinger in JS beyond L1.** Never measured at n >= 1e5 here. Without prefetch, does it
+  still beat branchless? Also the rank array's cost (one extra read per query, 4 B per key).
+- **R-6 Shapes the kernel doesn't serve:** the masked ring (Ohlc), compound keys (Room,
+  `_lbRun`), method reads (EliasFano). Either a documented "write your own" or a strided /
+  key-offset variant; decide from how often each shape appears in the next package written.
+- **R-7 Offset LUT index (RESEARCH 17) as layer C.** It is a maintained structure with upkeep
+  on every write, so it probably belongs in its owner (RoaringSet), not here. Decide after the
+  RoaringSet Batch B ruling.
+- **R-8 Allocation:** every kernel 0 B/op through the LiteUtils `alloc-per-op.mjs` probe,
+  including F64 queries that are fractional or >= 2^31 (zero-box law).
+- **R-9 Upper-bound and nearest helpers.** Charts needs nearest; Keyframe, Scrollforge and
+  Repair need "segment" (upper - 1). Thin wrappers or caller code?
+- **R-10 Other CPUs.** Every number is one Apple M4 Pro. Branch prediction does not transfer.
+  An x86 CI run is the minimum before any "faster" claim.
+- **R-11 A setup-time selector over the exported kernels** (maintainer proposal, 2026-11-10).
+  Every kernel stays exported, so any caller can pick one by name. On top of them:
+  `selectLowerBound(traits)` / `selectUpperBound(traits)` take what the kernel cannot see
+  (`type`, `feedsWrite`, `static`, `coherent`) and return ONE of the exported functions. The
+  caller stores it in a module const or a field that never changes, and calls it directly.
+  - Why at setup, not per call: a per-call dispatch (a table lookup, or an indirect call)
+    makes the call site polymorphic and blocks inlining. The branchless body is 98 B, just under
+    Maglev's 100 B single-inline limit (17.3). The facts that decide the strategy (feeds a
+    write, static, coherent) are not visible at call time anyway (section 1).
+  - Each table row ("traits -> kernel") is a STATISTICAL claim and needs its evidence (R-1,
+    R-2, R-3) on x86 as well as arm64 (R-10). A trait combination with no evidence returns the
+    safe default (branchy where the result feeds a write).
+  - Declined in advance, unless a new mechanism is shown: a mutable global registry that
+    packages register into (global state, load-order behavior, conflicts with
+    `sideEffects: false`); choosing by timing at runtime (host-dependent results, not
+    fail-closed).
+  - Probe in R-4: does a type-dispatch front (`a instanceof Float64Array` -> its own per-type
+    kernel) keep each kernel's type feedback monomorphic, and what does each call pay for it?
+    Does a call through a stored field stay monomorphic and inline the target?
+  - Later rung of R-2, not 1.0: a stateful cursor that adapts to its own hint hits (Timsort's
+    `min_gallop`), and falls back to a fresh search when gallops keep missing.
+  - Output: a Q-id in the P0 PROPOSAL with the trait names, the table and the default per
+    row. New public surface, so no planner pass before the ruling.
+
+## 6. Verification plan, by tier
+
+- **DETERMINISTIC (`npm test`):**
+  - the draft-check oracle as node:test, per element type;
+  - boundary suite (empty range, `lo === hi`, `hi - lo = 1`, all-equal arrays, 2^30 cap);
+  - Eytzinger over n = 0..1,000 exhaustively;
+  - `alloc-per-op` gate at 0 B/op on every kernel, with a must-fail boxed lane;
+  - bytecode-size gate (`bytecode-budget.sh`): branchless <= 100 B so Maglev can inline it.
+- **STATISTICAL (once per release, hosted CI):**
+  - R-1, R-2 and R-3 as interleaved A/B with the 16.2 method;
+  - each claim worded with its statistic, K rounds and a must-fail control.
+- **REPORTED:** n-sweep tables (n = 4 .. 1e7) per kernel and element type, with provenance.
+- **Revert check:** at adoption, each migrated call site's own tests must pass on both the old
+  and the new search (same answers), and the A/B must be run on the real package, never on a
+  copy.
+
+## 7. CI (sketch; the timing lane matters more here than for most packages)
+
+- **Every push:** `npm test` (DETERMINISTIC), Node 22 / 24 / 26.
+- **Nightly:** the STATISTICAL lane on ubuntu-latest (x86) AND macos-latest (arm64). R-10 is the
+  point: a branchless verdict from one ARM chip says nothing about x86 branch predictors. Upload
+  the logs as artifacts; the verdicts are REPORTED until a release run gates them.
+- The quiet-lock does not exist on hosted runners. Noise is handled by the interleaved A/B
+  design itself (A/A band, must-fail control), not by a quiet host.
+
+## 8. Phases
+
+- **P0 research:** R-1, R-2, R-4, R-8, on the draft, plus R-11's selector surface as a
+  PROPOSAL Q-id (its R-4 probe runs with R-4). Output: a RESEARCH.md with the kill rules
+  written before each run, and a maintainer ruling per question. Each finding that confirms or
+  breaks an inherited LEDGER entry (`I<n>`) becomes a `C<n>` entry there.
+- **P1 package:** the kernels that survived P0, per element type, plus node:test and the
+  0 B/op gate. `Bisect.draft.js` is never shipped as is. `@zakkster/lite-utils` `^1.0.0` is
+  a devDependency and the tools are called through its bins (Q-LU-1, Q-LU-1a, section 9).
+- **P2 adoption, one package at a time, highest value first:**
+  - LogN SortedArray / MergeSortTree / WaveletTree (9 sites, Float64Array, mostly reads);
+  - then the per-frame sites (Keyframe, MotionPath, Scrollforge, Virtual) if R-2 wins.
+  - Each adoption is that package's own reviewed change and A/B.
+  - Sites that feed a write stay branchy unless R-3 says otherwise.
+- **P3 release:** CI nightly green for a week, the STATISTICAL claims gated once, docs with
+  tiers.
+
+The likely outcome to plan for: the main value is ONE tested set of kernels with one contract
+replacing ~28 copies; speed wins are per site and must be shown per site.
+
+## 9. LiteUtils integration (planning only, 2026-11-10)
+
+LiteUtils is the suite's V8 measurement tooling. Today it is `0.0.0`, `private: true`, with no
+`bin` or `exports` (LiteUtils/package.json:3, 9-10). The maintainer plans its full release soon,
+possibly 2026-11-10. Nothing below is wired yet.
+
+**How LiteSignal and LiteLogLogN integrate it today:** copied scripts, never imported. Neither
+package.json depends on `@zakkster/lite-utils`.
+- LiteLogLogN: `test/tools/inlining-budget-diff.sh`, whose header names the LiteUtils source
+  sha256 (`740da13b...`, 902 lines), cut to driver mode. `test/InliningTool.test.js` tests the
+  copy; npm script `inline-budget-diff`. ROADMAP R0 item 4: "copied, never imported".
+- LiteSignal: `bench/inlining-budget-diff.sh` and `bench/bytecode-budget.sh` (npm scripts
+  `inline-budget-diff`, `bytecode-budget`), replaced by the maintainer's LiteUtils copy
+  (CHANGELOG, decision D-b143-2, 2026-10-30). `test/94-inlining-budget-diff.test.mjs` runs
+  the copy's `--self-test`.
+
+**Which tool serves which item here:**
+
+| LiteUtils tool | Serves | Tier |
+|---|---|---|
+| `alloc-per-op.mjs` | R-8; the 0 B/op gate on every kernel, with a must-fail boxed lane (section 6) | DETERMINISTIC |
+| `ic-diff.sh` | R-4 (does a factory share one feedback vector?); R-11 (does a type-dispatch front keep each kernel monomorphic?) | research probe |
+| `bytecode-budget.sh` | the bytecode gate: branchless body <= 100 B (17.3) | DETERMINISTIC on a pinned Node |
+| `inlining-budget-diff.sh` | R-11: does the kernel the selector returns still inline into the caller through a const / stored field? | research probe, then a gate if R-11 is adopted |
+| `deopt-diff.sh` | R-4: does a mixed-type app deopt a shared kernel, and do the per-type kernels stay clean? | research probe |
+| `allocation-diff.sh` | role here not decided: read its `-h` first (candidate: before / after allocation at P2 adoption) | TBD |
+
+The quiet lock is a suite hook (`~/.claude/hooks/quiet-lock.mjs`), not part of LiteUtils.
+
+**Q-LU-1 -- RULED 2026-11-10 (maintainer):** "add LiteUtils as a devDependency - it would be
+further developed, so 1.0.0 and above would assure that always the newest version will be
+installed".
+- `@zakkster/lite-utils` is a devDependency at `^1.0.0` (Q-LU-1a), not an exact pin, so
+  LiteBisect follows LiteUtils as it develops. npm scripts call its bins; hosted CI gets the
+  tools from `npm ci`. `dependencies` stays empty, so the zero-deps law holds.
+- Needs: a LiteUtils release >= 1.0.0 that ships `bin` entries (or `exports`) for the tools in
+  the table above.
+- Declined: copying the tools with sha256 pins (the LiteSignal / LiteLogLogN pattern).
+- Consequence: a gate's verdict can change when LiteUtils changes, with no edit in this
+  package. So every gate and probe run records the INSTALLED LiteUtils version
+  (`npm ls @zakkster/lite-utils`) in its provenance, and a changed verdict is first checked
+  against a LiteUtils version change before the kernels are blamed.
+- Note: with a committed `package-lock.json`, `npm ci` installs the LOCKED version, not the
+  newest. "Always the newest" happens when the lock is refreshed (`npm update`), and that shows
+  up as a lockfile diff.
+
+**Q-LU-1a -- RULED 2026-11-10 (maintainer):** `^1.0.0`. "There are not planned 2.0.0, only
+minors, so your recommendation is accepted". The newest 1.x is installed when the lock is
+refreshed. A LiteUtils 2.0.0, if one ever ships, is not picked up until this package moves to
+`^2.0.0` on purpose. Declined: `>=1.0.0` (would take any future major too).
+
+Until LiteUtils >= 1.0.0 is published, P0 research probes call the tools from the LiteUtils
+checkout by absolute path, and record the LiteUtils commit + sha in each probe's provenance.
