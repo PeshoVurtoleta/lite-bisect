@@ -264,7 +264,7 @@ further developed, so 1.0.0 and above would assure that always the newest versio
 installed".
 - `@zakkster/lite-utils` is a devDependency at `^1.0.0` (Q-LU-1a), not an exact pin, so
   LiteBisect follows LiteUtils as it develops. npm scripts call its bins; hosted CI gets the
-  tools from `npm ci`. `dependencies` stays empty, so the zero-deps law holds.
+  tools from `npm install`. `dependencies` stays empty, so the zero-deps law holds.
 - Needs: a LiteUtils release >= 1.0.0 that ships `bin` entries (or `exports`) for the tools in
   the table above.
 - Declined: copying the tools with sha256 pins (the LiteSignal / LiteLogLogN pattern).
@@ -272,9 +272,10 @@ installed".
   package. So every gate and probe run records the INSTALLED LiteUtils version
   (`npm ls @zakkster/lite-utils`) in its provenance, and a changed verdict is first checked
   against a LiteUtils version change before the kernels are blamed.
-- Note: with a committed `package-lock.json`, `npm ci` installs the LOCKED version, not the
-  newest. "Always the newest" happens when the lock is refreshed (`npm update`), and that shows
-  up as a lockfile diff.
+- Note: `package-lock.json` is gitignored, as in LiteLogLogN and LiteFastBit32. So every fresh
+  `npm install` (local or CI) resolves the newest 1.x, and no diff in this repo shows that
+  LiteUtils moved. The recorded installed version is the only trace, which is why every run
+  records it.
 
 **Q-LU-1a -- RULED 2026-11-10 (maintainer):** `^1.0.0`. "There are not planned 2.0.0, only
 minors, so your recommendation is accepted". The newest 1.x is installed when the lock is

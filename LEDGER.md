@@ -5,8 +5,9 @@ for the sorted-array search kernels. Each entry names the file, path or source l
 rests on; nothing here comes from memory. Nothing here is re-litigated without a new mechanism
 that clears every gate the original decision cleared.*
 
-Scope: `@zakkster/lite-bisect` (DRAFT, 2026-11-10; see ROADMAP.md). The package is not yet a git
-repository, so no entry carries a commit id; entries name files and dates until it is. Most of
+Scope: `@zakkster/lite-bisect` (DRAFT, 2026-11-10; see ROADMAP.md). Repository
+`github.com/PeshoVurtoleta/lite-bisect`, first commit 87389fb (2026-11-10). Entries written
+before that commit name files and dates only. Most of
 what this package knows today it INHERITED from other suite ledgers (section I). Inherited
 entries are evidence measured on another package's code; they bind the research here, but a
 number from them is never quoted as this package's number.
@@ -21,7 +22,7 @@ number from them is never quoted as this package's number.
   - `B<n>` defects found and fixed;
   - `C<n>` measurement lessons from this package's own runs;
   - `D<n>` process lessons.
-- Sources: ROADMAP.md, `draft-check.mjs`, `.handoff/` (gitignored, once it exists), and the
+- Sources: `git log`, ROADMAP.md, `draft-check.mjs`, `.handoff/` (gitignored, once it exists), and the
   ledgers and RESEARCH.md of LiteLogLogN, LiteSignal and LiteFastBit32 under
   `/Users/zakkster/Work/Portfolio/LiteLibrariesSuite/`.
 - Tiers: DETERMINISTIC gates run in `npm test` / `npm run verify` every time; STATISTICAL
@@ -195,7 +196,8 @@ on these kernels. No single green gate authorises a release.
   false, so the gallop stopped at once and returned the hint instead of `lo`.
 - **Root cause:** a predicate written as the "opposite" of `a[l] < x` instead of its negation;
   the two differ only on NaN.
-- **Evidence:** ROADMAP.md section 4; `Bisect.draft.js` (`!(a[l] < x)`, with a comment);
+- **Evidence:** 87389fb (the fix is in the first commit); ROADMAP.md section 4;
+  `Bisect.draft.js` (`!(a[l] < x)`, with a comment);
   `draft-check.mjs` hint lanes with NaN queries. The mutant scripts lived in a session
   scratchpad: NOT FOUND in the package.
 - **Law:** 9. **Gate:** `draft-check.mjs` (becomes node:test in P1). Every kernel uses the one
@@ -223,6 +225,7 @@ None yet. P0 research adds them (R-1, R-2, R-4, R-8).
 
 ## Not yet covered
 
-- No entry here has a commit id: the package is not a git repository yet.
+- Entries before 87389fb (A1, A2, A3, B1, D1) were written before the repository existed;
+  only B1 cites a commit, the one that contains its fix.
 - Inherited entries were read from the source ledgers on 2026-11-10; a later change there is
   not tracked here.

@@ -1,0 +1,8 @@
+/node_modules/
+/package-lock.json
+
+# burst handoff (session state, never shipped)
+/.handoff/
+
+# independent audits (findings + reproductions, never shipped)
+/audit/
