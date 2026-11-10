@@ -38,9 +38,10 @@ Why B and C cannot be automatic, from measurements already in the suite:
   another loses its single-type feedback on the array reads (V8.md, ElementsKinds.md). So
   per-type kernels are a packaging decision, not a runtime switch (R-4).
 
-Honest expectation for layer A: the length switch may earn almost nothing. Branchless already
-ties linear at 8 keys and wins from 16 (S0). The hint gallop is the layer-A idea with the most
-potential (§2: most per-frame call sites query near their last answer), but it is unmeasured.
+Layer A after P0: the length switch LOST in P0 T1 (LEDGER C4, PRELIMINARY). (Expectation before
+P0, from S0: branchless ties linear at 8 keys and wins from 16.) The hint gallop is the layer-A idea with the most
+potential (section 2: most per-frame call sites query near their last answer); P0 T2: FASTER on coherent walks at n >= 4,096, 2.4-3.4x
+SLOWER on uniform queries (LEDGER C5, PRELIMINARY, one CPU).
 
 ## 2. Inventory (2026-11-10, two sweeps of main source files, read-only)
 
@@ -110,7 +111,8 @@ there means "no early exit on equality". A one-line wording fix for the next Log
 `Bisect.draft.js`: Float64Array kernels (lower bound linear / branchy / branchless, upper bound
 branchy / branchless), adaptive `lowerBound`, `lowerBoundHint`, and Eytzinger build + search.
 They come from the measured S0 / L1 kernels, adapted to `[lo, hi)`. Contract in the file header:
-NaN query -> `lo`, no validation, no throw, no allocation (allocation unmeasured).
+NaN query -> `lo`, no validation, no throw, no allocation (P0 U3: 0 B/op inlined; a non-Smi query boxes 16 B across a
+non-inlined call, LEDGER C2).
 
 `draft-check.mjs` (`node draft-check.mjs [seed]`):
 
@@ -135,9 +137,14 @@ NaN query -> `lo`, no validation, no throw, no allocation (allocation unmeasured
   at n = 1..32, using the 16.2 method (3 compilations, A/A, a must-fail control). Kill rule
   fixed before the run: drop layer A's switch unless it wins >= 1.10x somewhere AND loses
   nowhere beyond the A/A band.
+  P0 result (T1, 2026-11-10, LEDGER C4, PRELIMINARY, one CPU): DROP. The switch read SLOWER at
+  every n = 1..8 (1.640..3.325), WITHIN at 9..32, SLOWER on the mixed-length lane; never FASTER.
 - **R-2 Hint gallop vs a fresh search** on coherent query streams: random walk with step d =
   1, 4, 64, n/8, plus a uniform-random control where the hint must lose or tie. Use real
   Keyframe / MotionPath / Virtual traces if they exist.
+  P0 result (T2, 2026-11-10, LEDGER C5, PRELIMINARY, one CPU): the hint STANDS on the rule
+  (FASTER at d = 1 and 4 at n = 4,096 and 65,536; SLOWER at n = 256); it costs 2.4-3.4x on
+  uniform queries, so it is a caller choice, not automatic. Real site traces: not yet.
 - **R-3 Branchy vs branchless at FEEDS-WRITE sites** outside LogLogN (SortedArray, YFastTrie):
   does RESEARCH 18 transfer?
 - **R-4 Per-type packaging.**
@@ -157,8 +164,8 @@ NaN query -> `lo`, no validation, no throw, no allocation (allocation unmeasured
   RoaringSet Batch B ruling.
 - **R-8 Allocation:** every kernel 0 B/op through the LiteUtils `alloc-per-op.mjs` probe,
   including F64 queries that are fractional or >= 2^31 (zero-box law).
-- **R-9 Upper-bound and nearest helpers.** Charts needs nearest; Keyframe, Scrollforge and
-  Repair need "segment" (upper - 1). Thin wrappers or caller code? Read the ecosystem API
+- **R-9 Upper-bound and nearest helpers.** Charts needs nearest; Keyframe, Scrollforge,
+  Repair and MotionPath (MotionPath.js:173) need "segment" (upper - 1). Thin wrappers or caller code? Read the ecosystem API
   first (one research pass, while drafting the PROPOSAL): d3-array `bisectLeft` /
   `bisectRight` / `bisectCenter` (`bisectCenter` is the "nearest" helper), Python `bisect`
   (`lo`, `hi`, `key=`), C++ `lower_bound` / `upper_bound` / `equal_range`. It settles the
@@ -210,6 +217,24 @@ NaN query -> `lo`, no validation, no throw, no allocation (allocation unmeasured
 
 Source from an external review of lite-pick (RECOMMENDATIONS.md, read 2026-11-10): R-9's
 prior-art pass, R-12, Q-GUARD, and the section 6 / 7 / 9 additions marked "(lite-pick review)".
+
+## 5a. P0 PROPOSAL rulings (maintainer, 2026-11-10, one AskUserQuestion sitting)
+
+The PROPOSAL (`.handoff/PROPOSAL-bisect.md`, gitignored) is the first planner pass's input. Its rulings, quoted:
+
+| Q-id | Ruling | Means |
+|---|---|---|
+| Q-KERNELS | "(a) Lean set (Recommended)" | ship lower / upper branchless, lower / upper branchy, `lowerBoundHint` (coherent streams only); drop `lowerBound`, `LINEAR_MAX`, `lowerBoundLinear` (LEDGER A4); Eytzinger waits for R-5 (A6) |
+| Q-R4 | "(a) Generated (Recommended)" | one template; a dev-only generator writes the 5 per-type copies (F64 / F32 / U32 / U16 / I32) into the main file; gate: generated == committed |
+| Q-BODY | "(a) A/B first (Recommended)" | v3 (92 B) only after a timed A/B vs the 103 B body; P1 bytecode gate < 100 B on every kernel Maglev should inline |
+| Q-BOX | "(a) Qualified wording (Recommended)" | zero allocation where the kernel inlines or the query is a Smi; a not-inlined non-Smi lane in the alloc gate must read ~16 B/op |
+| Q-R11 | "(a) No selector at 1.0 (Recommended)" | kernels by name + a README choice table with tiers; A3 refused; selector PARKED (A5) |
+| Q-FRONT | "(a) No per-call front (Recommended)" | nothing in the hot path dispatches on type (A5) |
+| Q-GUARD | "(a) Cold assert helpers (Recommended)" | cold `assertRange(a, lo, hi)` (throws RangeError) / `assertSorted(a, lo, hi)` (throws on a descent or a NaN in [lo, hi)); hot kernels trust the caller |
+| Q-NAMES | "(a) lower/upper + helpers (Recommended)" | lower / upper names; `segment` (upper - 1) and `nearest` (tie -> LOWER index, as Charts.js:400) ship |
+
+Also ruled: the INTAKE A1 departure accepted (non-strict timed runs on a PRELIMINARY host are non-verdict runs; INTAKE A2); a tracked
+RESEARCH.md created; Q-LU-1a NOT reopened (section 9).
 
 ## 6. Verification plan, by tier
 
@@ -328,12 +353,12 @@ minors, so your recommendation is accepted". The newest 1.x is installed when th
 refreshed. A LiteUtils 2.0.0, if one ever ships, is not picked up until this package moves to
 `^2.0.0` on purpose. Declined: `>=1.0.0` (would take any future major too).
 
-**Open note on Q-LU-1a (2026-11-10, NOT a ruling):** an external review of lite-pick
+**Note on Q-LU-1a (2026-11-10; ruled: NOT reopened):** an external review of lite-pick
 (RECOMMENDATIONS.md section 5) recommends pinning `@zakkster/*` tooling EXACTLY, because "a
 tooling update can move a perf gate". P0 produced a concrete case (LEDGER D2): when LiteUtils
 fixes alloc-per-op's STEADY fail-open, LiteBisect's alloc gate results change with no diff in
 this repo. That is a new mechanism, so the LEDGER rules allow reopening Q-LU-1a; whether to
-reopen is the maintainer's decision. Until then `^1.0.0` stands, with the installed version
+reopen is the maintainer's decision. Raised 2026-11-10 (P0 burst 2), ruled "Keep ^1.0.0": NOT reopened. `^1.0.0` stands, with the installed version
 recorded in every run's provenance.
 
 Until LiteUtils >= 1.0.0 is published, P0 research probes call the tools from the LiteUtils

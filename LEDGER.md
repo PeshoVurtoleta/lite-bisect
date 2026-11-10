@@ -47,7 +47,8 @@ number from them is never quoted as this package's number.
 ## 0. The laws (read this first)
 
 All 11 were inherited. Each becomes this package's own law once a `C<n>` entry here confirms
-it: law 3 (C1, C3) and law 8 (C2) are confirmed on this package as of 2026-11-10.
+it: law 3 (C1, C3), law 8 (C2), laws 4 and 6 (C4, C5) and law 5 (C6) are confirmed on this
+package as of 2026-11-10.
 
 1. **Time the consumer, not the search.** A branchless search's result is data at the end of a
    chain of loads; whatever consumes it waits. Branchless read 2-4x faster alone and an
@@ -73,7 +74,9 @@ it: law 3 (C1, C3) and law 8 (C2) are confirmed on this package as of 2026-11-10
    Binds: every R-1 / R-2 / R-3 / R-5 probe, the STATISTICAL lane.
 6. **A crossover belongs to the pair compared and the size.** Linear vs branchy crosses at
    ~40-64 keys, linear vs branchless at ~16; a layout that wins in L1 can lose past a size
-   crossover. Judge across an n-sweep, never at one size. *(I4, I6)* Binds: R-1, R-5,
+   crossover. Judge across an n-sweep, never at one size. On this package (C4): no
+   linear-vs-branchless crossover in 1..8 on a random stream; a crossover also belongs to the
+   stream. *(I4, I6, C4)* Binds: R-1, R-5,
    `LINEAR_MAX`.
 7. **Branch prediction and memory ordering do not transfer across CPUs.** Every inherited
    timing is one Apple M4 Pro. A "faster" claim needs x86 too. *(I1, I6)* Binds: R-10, the
@@ -181,12 +184,38 @@ on these kernels. No single green gate authorises a release.
   adopted on purpose.
 - **Evidence:** ROADMAP.md section 9.
 
-### A3. A per-call strategy registry; choosing a kernel by timing at runtime *(PROPOSED for refusal 2026-11-10, R-11; NOT YET RULED)*
+### A3. A per-call strategy registry; choosing a kernel by timing at runtime *(REFUSED 2026-11-10, P0 PROPOSAL Q-R11)*
 - **Reason given:** a per-call lookup or indirect call makes the call site polymorphic and
   blocks inlining (law 2, law 3); a mutable global registry is global state with load-order
   behaviour, against `sideEffects: false`; runtime timing makes results depend on the host.
-- **Status:** recorded in ROADMAP R-11 as "declined in advance"; the maintainer rules it in the
-  P0 PROPOSAL. Until then it is a proposal, not a ruling.
+- **Status:** RULED with Q-R11 (maintainer, 2026-11-10): "(a) No selector at 1.0
+  (Recommended)", whose text refuses A3 under every option.
+- **Evidence:** .handoff/PROPOSAL-bisect.md Q-R11; ROADMAP R-11 "Declined in advance"; laws 2, 3.
+- **Reopens with:** a mechanism that keeps the call site monomorphic and inlined with a
+  per-call choice, traced (law 3).
+
+### A4. The length switch (`lowerBound`, `LINEAR_MAX`) and `lowerBoundLinear` *(REFUSED 2026-11-10, Q-KERNELS)*
+- **Reason:** C4. The switch never read FASTER and read SLOWER at every n = 1..8; no measured
+  case has linear beating branchless. Ruling: "(a) Lean set (Recommended)".
+- **Evidence:** `.handoff/PROPOSAL-bisect.md` Q-KERNELS; LEDGER C4.
+- **Reopens with:** C4's reopen conditions (an x86 win with no loss, or a predictable caller
+  stream measured at that caller).
+
+### A5. A setup-time selector at 1.0; a per-call `instanceof` type front *(PARKED / REFUSED 2026-11-10, Q-R11, Q-FRONT)*
+- **Reason:** every "traits -> kernel" row is arm64-only evidence (R-3 and R-10 unrun), so a
+  selector would mostly return defaults; the front's per-call cost is unmeasured and callers
+  can name the per-type kernel. Rulings: "(a) No selector at 1.0 (Recommended)" (PARKED, not
+  refused: U2 showed the selector is free on inlining); "(a) No per-call front (Recommended)"
+  (REFUSED).
+- **Evidence:** PROPOSAL Q-R11 / Q-FRONT; PROGRESS U1 / U2; C3.
+- **Reopens with:** selector -- R-3 plus an x86 run (R-10) giving evidence per row; front -- a
+  timed rung of its per-call cost that reads WITHIN against the typed kernel (a bar set by the
+  author, not ruled).
+
+### A6. Eytzinger at 1.0 *(PARKED 2026-11-10, Q-KERNELS)*
+- **Reason:** never measured on this package (R-5); the inherited win is PRELIMINARY and in L1.
+- **Evidence:** .handoff/PROPOSAL-bisect.md Q-KERNELS; ROADMAP section 3 row 16.1 S0 (PRELIMINARY, in L1); R-5.
+- **Reopens with:** an R-5 rung (n >= 1e5, kill rule fixed before the run).
 
 ---
 
@@ -219,7 +248,8 @@ on these kernels. No single green gate authorises a release.
   1,147,713 oracle checks, 0 bad; speed unmeasured.
 - **Law:** 3 (EXPECTED is not TRACED) extended: a number inherited from another package's body
   is a hypothesis about this body until measured here.
-- **Gate:** none yet. P1 bytecode gate `< 100 B` on every kernel Maglev should inline.
+- **Gate:** none yet. P1 bytecode gate `< 100 B` on every kernel Maglev should inline. Reopens
+  with: a Node / V8 change to these bodies' bytecode or to Maglev's inline limit.
 
 ### C2. A non-Smi F64 query boxes 16 B per call across a non-inlined call *(MEASURED 2026-11-10, P0 U3)*
 - **What happened:** every kernel reads 0.07 B/op (= the floor) when inlined into its caller.
@@ -233,7 +263,8 @@ on these kernels. No single green gate authorises a release.
   or the query is a Smi. The contract must say so; R-11's selector is free on inlining (U2),
   so a selected kernel inlines exactly where a directly imported one does.
 - **Gate:** none yet. P1 alloc gate needs a not-inlined lane with a non-Smi query, which must
-  read one box (16 B), so the gate is seen to work.
+  read one box (16 B), so the gate is seen to work. Reopens with: a V8 that passes doubles
+  unboxed across a non-inlined call (the not-inlined lane would then read the floor).
 
 ### C3. Per-type feedback: one shared fn and a factory both go megamorphic; a type-dispatch front keeps it *(MEASURED 2026-11-10, P0 U1)*
 - **What happened:** fed Float64 / Float32 / Uint32 / Uint16 / Int32 in turn, one shared
@@ -247,7 +278,59 @@ on these kernels. No single green gate authorises a release.
 - **Law:** none new (3 confirmed: the ROADMAP's "believed to share ONE feedback vector" was a
   hypothesis; it held).
 - **Gate:** none yet. R-4 option 2 (factory) is dead on this evidence; option 1 (one literal per
-  type, hand-written or generated) and the front stay in.
+  type, hand-written or generated) and the front stay in. Reopens with: a V8 change to feedback
+  sharing between closures of one literal (ic-diff on U1b no longer MEGAMORPHIC).
+
+### C4. The length switch loses: the linear arm is slower than branchless at every n <= 8 *(MEASURED 2026-11-10, P0 T1; R-1 DROP)*
+- **What happened:** `lowerBound` (linear at n <= `LINEAR_MAX` = 8, else branchless) vs
+  `lowerBoundBranchless`, random sub-ranges, uniform queries. In the `--strict` hold it read SLOWER at
+  every n = 1..8 (1.640..3.325, B - A 3.80..5.21 ns/op), WITHIN at n = 9..32 (1.004..1.037) and
+  SLOWER on the mixed-length lane (1.120). No n was FASTER. Rule (INTAKE A1): DROP the switch.
+  Linear vs branchy (report): linear FASTER up to n = 48, WITHIN at 52..64.
+- **Root cause:** not established. Hypothesis, untraced: the linear exit branch is unpredictable
+  on a random stream and the branchless loop has no data-dependent branch. LogLogN S0's "linear wins at k <= 4" came from
+  another pair and stream; it did not transfer.
+- **Evidence:** `.handoff/research/p0/PROGRESS.md` T1 + strict re-run; logs/t1-1.log (run 1),
+  logs/t1-strict.log (verdict). Apple M4 Pro, node v26.8.2 / V8 14.6.202.34, K = 11, C = 3, lab
+  25f677ab, frozen draft 3af35dca; strict entry QUIET (load1 3.18 vs baseline 2.21), busy-node none.
+  PRELIMINARY tier: one CPU, one run per verdict.
+- **Law:** 4 and 6 confirmed on this package (a switch must win measured or go; a crossover belongs
+  to the pair, the size and the stream).
+- **Gate:** none (no switch ships: REFUSED, A4 / Q-KERNELS). Reopens with: an x86 run (R-10)
+  where some n is FASTER <= 0.909 and none SLOWER, or a caller stream where the linear exit is
+  predictable, measured at that caller.
+
+### C5. The hint gallop wins on coherent streams at n >= 4,096 and costs 2.4-3.4x on incoherent ones *(MEASURED 2026-11-10, P0 T2; R-2 STANDS)*
+- **What happened:** `lowerBoundHint` (hint = previous answer) vs `lowerBoundBranchless`. In the
+  `--strict` hold: n = 4,096 d = 1 / 4 FASTER 0.614 / 0.913; n = 65,536 FASTER 0.436 / 0.654;
+  n = 256 SLOWER 1.107 / 1.683. Uniform (control) SLOWER 3.402 / 2.842 / 2.375. It stops winning at
+  d = 64 (n >= 4,096). Rule: STANDS (FASTER at d <= 4 at 2 of 3 sizes). Run 1: every word matched; ratios within 3% relative (largest gap 0.093,
+  walk:256:64).
+- **Reason:** a gallop pays O(log d) probes plus its own bytes (228 B, U2); it beats a fresh
+  O(log n) search only when d is small against n, and loses outright when the query is not near
+  the hint.
+- **Evidence:** PROGRESS.md T2 + strict re-run; logs/t2-1.log, logs/t2-strict.log. Same host and
+  build as C4. T2 ran after T1 in the same hold: load1 3.52 at T2 start, 3.79 at end; QUIET was
+  checked at hold entry only. Run 1 (non-strict): host PRELIMINARY, load1 3.69. PRELIMINARY tier.
+- **Law:** 6 (per size); a kernel that loses 2-3x on the wrong stream cannot be automatic (ROADMAP
+  section 1: the caller knows coherence, the kernel does not).
+- **Gate:** none yet. Reopens with: an x86 run, or a real per-frame site trace (R-2 asks for
+  Keyframe / MotionPath / Virtual) whose step distribution differs from the random walk.
+
+### C6. One VOID lane in run 1 did not reproduce in the strict hold *(FOUND 2026-11-10, P0 T1)*
+- **What happened:** run 1 of T1 VOIDed `sw:mix` on A/A drift (0.933 [0.924..0.947], band
+  0.95..1.05; tight IQR), so the lab printed UNRULED. The `--strict` re-run read A/A 1.009 there
+  and every fixed-n word matched run 1.
+- **Reason:** not established. A and AA differ by compilation, by their own arrays and by their slot in the
+  shuffled interleave; law 5 / I4 record up to
+  ~20% one-compilation bias, and a tight IQR does not prove a structural cause.
+- **Evidence:** logs/t1-1.log line 44-45 vs logs/t1-strict.log. Run 1: host QUIET at start
+  (load1 3.10), non-strict.
+- **Law:** 5 (a verdict needs a range, never one run) and 9 (the lab failed closed instead of
+  printing DROP). The VOID was resolved by the registered re-run, not by argument; it was not
+  overridden.
+- **Gate:** none. Reopens with: a second `sw:mix` A/A VOID (any run): then investigate the A copies
+  (per-copy code layout) before any re-run.
 
 ---
 
