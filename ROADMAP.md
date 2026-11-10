@@ -181,7 +181,8 @@ non-inlined call, LEDGER C2).
     makes the call site polymorphic and blocks inlining. (Correction 2026-11-10, P0 U2: the
     "98 B, just under Maglev's 100 B" figure was LiteLogLogN's `_lb16`; the draft's
     `lowerBoundBranchless` is 103 B, so Maglev does not inline it at its default limit; a
-    correct 92 B form exists, speed unmeasured.) The facts that decide the strategy (feeds a
+    correct 92 B form exists; P0 T3 measured it SLOWER at every fixed n = 1..32 under TurboFan, so 103 B
+    stays, LEDGER C7.) The facts that decide the strategy (feeds a
     write, static, coherent) are not visible at call time anyway (section 1).
   - P0 results (untimed, 2026-11-10, `.handoff/research/p0/PROGRESS.md`): a module const or a
     field returned by a selector gets the SAME inlining decision as a direct import (U2). A
@@ -226,7 +227,7 @@ The PROPOSAL (`.handoff/PROPOSAL-bisect.md`, gitignored) is the first planner pa
 |---|---|---|
 | Q-KERNELS | "(a) Lean set (Recommended)" | ship lower / upper branchless, lower / upper branchy, `lowerBoundHint` (coherent streams only); drop `lowerBound`, `LINEAR_MAX`, `lowerBoundLinear` (LEDGER A4); Eytzinger waits for R-5 (A6) |
 | Q-R4 | "(a) Generated (Recommended)" | one template; a dev-only generator writes the 5 per-type copies (F64 / F32 / U32 / U16 / I32) into the main file; gate: generated == committed |
-| Q-BODY | "(a) A/B first (Recommended)" | v3 (92 B) only after a timed A/B vs the 103 B body; P1 bytecode gate < 100 B on every kernel Maglev should inline |
+| Q-BODY | "(a) A/B first (Recommended)" | v3 (92 B) only after a timed A/B vs the 103 B body; P1 bytecode gate < 100 B on every kernel Maglev should inline. **Outcome (P0 T3, 2026-11-11; LEDGER C7):** v3 SLOWER at every fixed n = 1..32 under TurboFan; maintainer: KEEP 103 B, "(c) as written (Recommended)" -- the branchless gate pins TurboFan inlining only; docs say Maglev does not inline it |
 | Q-BOX | "(a) Qualified wording (Recommended)" | zero allocation where the kernel inlines or the query is a Smi; a not-inlined non-Smi lane in the alloc gate must read ~16 B/op |
 | Q-R11 | "(a) No selector at 1.0 (Recommended)" | kernels by name + a README choice table with tiers; A3 refused; selector PARKED (A5) |
 | Q-FRONT | "(a) No per-call front (Recommended)" | nothing in the hot path dispatches on type (A5) |
@@ -243,9 +244,9 @@ RESEARCH.md created; Q-LU-1a NOT reopened (section 9).
   - boundary suite (empty range, `lo === hi`, `hi - lo = 1`, all-equal arrays, 2^30 cap);
   - Eytzinger over n = 0..1,000 exhaustively;
   - `alloc-per-op` gate at 0 B/op on every kernel, with a must-fail boxed lane;
-  - bytecode-size gate (`bytecode-budget.sh`): branchless < 100 B so Maglev can inline it
-    (the frozen draft reads 103 B and FAILS this; P0 U2). The bound and the body are a
-    PROPOSAL question.
+  - bytecode-size gate (`bytecode-budget.sh`): the branchless pair keeps its 103 B body and the
+    gate pins TurboFan inlining into a caller; Maglev does not inline it (100 B cap; Q-BODY (c),
+    LEDGER C7). Kernels Maglev should inline stay < 100 B.
   - the `alloc-per-op` gate reads every window >= 1, not only STEADY (P0 U3 found STEADY = min
     fails open when a later tier boxes more).
   - boundary inputs the draft-check oracle does not feed yet (lite-pick review): `-0` and `+0`
@@ -323,7 +324,7 @@ package.json depends on `@zakkster/lite-utils`.
 |---|---|---|
 | `alloc-per-op.mjs` | R-8; the 0 B/op gate on every kernel, with a must-fail boxed lane (section 6) | DETERMINISTIC |
 | `ic-diff.sh` | R-4 (does a factory share one feedback vector?); R-11 (does a type-dispatch front keep each kernel monomorphic?) | research probe |
-| `bytecode-budget.sh` | the bytecode gate: branchless body < 100 B (Maglev's single-inline limit; the draft reads 103 B, P0 U2) | DETERMINISTIC on a pinned Node |
+| `bytecode-budget.sh` | the bytecode gate: < 100 B on kernels Maglev should inline; the branchless pair stays 103 B and pins TurboFan inlining (Q-BODY (c), LEDGER C7) | DETERMINISTIC on a pinned Node |
 | `inlining-budget-diff.sh` | R-11: does the kernel the selector returns still inline into the caller through a const / stored field? | research probe, then a gate if R-11 is adopted |
 | `deopt-diff.sh` | R-4: does a mixed-type app deopt a shared kernel, and do the per-type kernels stay clean? | research probe |
 | `allocation-diff.sh` | role here not decided: read its `-h` first (candidate: before / after allocation at P2 adoption) | TBD |

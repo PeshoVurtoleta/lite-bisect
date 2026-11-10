@@ -47,8 +47,8 @@ number from them is never quoted as this package's number.
 ## 0. The laws (read this first)
 
 All 11 were inherited. Each becomes this package's own law once a `C<n>` entry here confirms
-it: law 3 (C1, C3), law 8 (C2), laws 4 and 6 (C4, C5) and law 5 (C6) are confirmed on this
-package as of 2026-11-10.
+it: law 3 (C1, C3, C7), law 8 (C2), laws 4 and 6 (C4, C5), law 5 (C6) and law 2 (C7, Maglev tier
+only) are confirmed on this package as of 2026-11-11.
 
 1. **Time the consumer, not the search.** A branchless search's result is data at the end of a
    chain of loads; whatever consumes it waits. Branchless read 2-4x faster alone and an
@@ -245,10 +245,11 @@ on these kernels. No single green gate authorises a release.
   it described this body. The draft's empty-range guard alone costs 10 B (93 B without it).
 - **Evidence:** `.handoff/research/p0/PROGRESS.md` U2 + U2x; logs/u2-bytecode.log,
   u2x/v.mjs (sha 700464a0): v3 (guard folded into the return, `h & -(a[b + h] < x)`) 92 B,
-  1,147,713 oracle checks, 0 bad; speed unmeasured.
+  1,147,713 oracle checks, 0 bad; speed unmeasured (since measured: C7).
 - **Law:** 3 (EXPECTED is not TRACED) extended: a number inherited from another package's body
   is a hypothesis about this body until measured here.
-- **Gate:** none yet. P1 bytecode gate `< 100 B` on every kernel Maglev should inline. Reopens
+- **Gate:** none yet. P1 bytecode gate `< 100 B` on every kernel Maglev should inline; the branchless
+  pair is not one of them (C7: the 103 B body stays, its gate pins TurboFan inlining). Reopens
   with: a Node / V8 change to these bodies' bytecode or to Maglev's inline limit.
 
 ### C2. A non-Smi F64 query boxes 16 B per call across a non-inlined call *(MEASURED 2026-11-10, P0 U3)*
@@ -317,7 +318,7 @@ on these kernels. No single green gate authorises a release.
 - **Gate:** none yet. Reopens with: an x86 run, or a real per-frame site trace (R-2 asks for
   Keyframe / MotionPath / Virtual) whose step distribution differs from the random walk.
 
-### C6. One VOID lane in run 1 did not reproduce in the strict hold *(FOUND 2026-11-10, P0 T1)*
+### C6. One VOID lane in run 1 did not reproduce in the strict hold *(FOUND 2026-11-10, P0 T1; REOPENED 2026-11-11, P0 T3)*
 - **What happened:** run 1 of T1 VOIDed `sw:mix` on A/A drift (0.933 [0.924..0.947], band
   0.95..1.05; tight IQR), so the lab printed UNRULED. The `--strict` re-run read A/A 1.009 there
   and every fixed-n word matched run 1.
@@ -331,6 +332,39 @@ on these kernels. No single green gate authorises a release.
   overridden.
 - **Gate:** none. Reopens with: a second `sw:mix` A/A VOID (any run): then investigate the A copies
   (per-copy code layout) before any re-run.
+- **Reopened 2026-11-11 (P0 T3 strict, logs/t3-strict.log; the listed trigger names sw:mix, reopened on the
+  same mechanism):** both mixed-length lanes VOIDed on A/A
+  drift in one run (lb:mix 1.070 [1.061..1.072], ub:mix 0.941 [0.935..0.954]); every fixed-length
+  lane's A/A was in band (0.988..1.009). T3 was ruled on its fixed lanes (INTAKE A5, C7). Open: the
+  per-copy layout investigation of the mixed-length lanes; no mixed-length lane counts until it closes.
+
+### C7. The 92 B branchless body inlines under Maglev but reads SLOWER under TurboFan at every fixed n = 1..32; the 103 B body stays *(MEASURED 2026-11-10T23:08Z (UTC), RULED 2026-11-11, P0 T3; Q-BODY (c))*
+- **What happened:** v3 (empty-range guard folded into the return, `h & -(a[b + h] < x)`, 92 B; upper
+  form `<=`, 92 B) vs the frozen 103 B branchless bodies, lower and upper pairs, random sub-ranges
+  n = 1..32 plus a mixed-length lane, uniform queries. `--strict` hold (entry QUIET, load1 2.78 vs
+  baseline 2.21): v3 SLOWER at every fixed n in both pairs (lower 1.088..1.255, upper 1.101..1.279;
+  B - A 0.17..1.46 ns/op on A 1.90..9.86 ns); never FASTER. Both mixed-length lanes VOID (A/A drift,
+  C6), not quoted. Run 1 (host PRELIMINARY, a non-verdict run) agreed at every fixed n except lower
+  n = 1 (WITHIN 1.013). Traced, untimed: TurboFan inlines both bodies into every traced caller copy
+  (lb:8, lb:mix, ub:8: 36 / 36); Maglev
+  refuses both 103 B bodies ("big function, size (103) >= max-size (100)") and inlines both 92 B
+  bodies. The A3 rule printed UNRULED for both pairs (a VOID mix lane); maintainer
+  ruling (INTAKE A5): KEEP the 103 B body for lower and upper on the fixed lanes.
+- **Root cause:** not established. Hypothesis, untraced: `-(cmp)` negates a boolean and -(false) is
+  -0, a double, so the mask may leave int32 where `(0 - (cmp | 0)) & h` stays int32. The int32 mask
+  with the folded guard (u2x/v4.mjs) reads 104 B, so no < 100 B int32 form is known (untimed).
+- **Evidence:** `.handoff/research/p0/PROGRESS.md` T3; logs/t3-1.log (run 1), logs/t3-strict.log
+  (verdict), t3-trace-turbo-summary.log, t3-trace-maglev.log, u-t3-bytecode.log, u-t3-v4.log. Apple
+  M4 Pro, node v26.8.2 / V8 14.6.202.34, K = 11, C = 3, lab e8942567, frozen draft 3af35dca, v.mjs
+  700464a0, v3u.mjs fdab97ca; strict busy-node none. PRELIMINARY tier: one CPU, one strict run.
+- **Law:** 3 confirmed (INTAKE A3's EXPECTED Maglev decisions, 103 B refused and 92 B inlined, were
+  traced at the caller and held); 2 confirmed in the Maglev tier only (the kernel's 103 B, not the
+  caller, decided the inline; TurboFan inlined every traced copy, so its cumulative budget was not
+  exercised). Lesson: fewer bytes is not faster.
+- **Gate:** P1 bytecode gate on the branchless pair pins TurboFan inlining into a caller, not
+  `< 100 B`; the docs say Maglev does not inline them (its 100 B single-inline cap). Reopens with: a
+  < 100 B body that keeps an int32 mask and is not SLOWER at any n; a V8 change to Maglev's cap or
+  to these bodies' bytecode; an x86 run (R-10).
 
 ---
 

@@ -6,7 +6,7 @@ as a claim; a STATISTICAL claim needs the release lane on hosted CI, x86 and arm
 Laws and entries cited are in LEDGER.md. Working notes, raw logs and the probe harness are in `.handoff/research/p0/`
 (gitignored).
 
-## 1. P0 research (2026-11-10): R-4, R-11, R-8 untimed; R-1, R-2 timed; R-9 prior art
+## 1. P0 research (2026-11-10): R-4, R-11, R-8 untimed; R-1, R-2 timed; R-9 prior art; Q-BODY (1.8, burst 3)
 
 **Setup.** Kernels under test are the frozen draft `Bisect.draft.js` (sha256 3af35dca..., commit 87389fb), Float64Array.
 Host: Apple M4 Pro, node v26.8.2, V8 14.6.202.34. Tools from the LiteUtils checkout at 7c91d1c (ic-diff 11279540,
@@ -29,7 +29,7 @@ A kernel called through a module const or a field set from a setup-time selector
 decision as a direct import (and the same at Maglev with a raised limit); control DIFFs. Bytecode (report): branchy 55 B,
 linear 39 B, branchless 103 B, hint 228 B. The branchless body is over Maglev's < 100 B single-inline limit; the
 inherited "98 B" was another package's body. A 92 B form (guard folded into the return, `h & -(a[b + h] < x)`) is correct on 1,147,713 oracle
-checks; its speed is unmeasured.
+checks; measured SLOWER at every fixed n = 1..32 under TurboFan (1.8, LEDGER C7).
 
 ### 1.3 R-8 allocation (untimed; LEDGER C2)
 alloc-per-op, `--n 4000000 --windows 5`, pinned semi-space flags; control (a boxed double per op) reads 16.05 B/op.
@@ -68,5 +68,18 @@ private names say lower / upper; other sites use binarySearch / bisectNearest / 
 ### 1.7 What P0 decided (maintainer rulings, ROADMAP section 5a)
 Ship per-type generated literals of lower / upper branchless and branchy, `lowerBoundHint`, `segment`, `nearest`; plus
 cold `assertRange` / `assertSorted` (Q-GUARD; not per-type). Not at 1.0: the length switch and linear kernel (refused), a selector (parked), a per-call
-type front (refused), Eytzinger (parked until R-5). Before the P1 planner: a timed A/B of the 92 B branchless body vs 103 B.
+type front (refused), Eytzinger (parked until R-5). The timed A/B of the 92 B branchless body vs 103 B ran in P0 burst 3 (1.8).
 Not covered by P0: R-3 (feeds-write sites), R-5 (n >= 1e5, Eytzinger), R-6 (shapes not served), R-7 (offset LUT), R-10 (x86), R-12; real per-frame site traces for R-2.
+
+### 1.8 Q-BODY the branchless body, 103 B vs 92 B (timed, PRELIMINARY, one CPU; LEDGER C7; P0 burst 3, 2026-11-10T23:08Z, ruled 2026-11-11)
+v3 (guard folded into the return, `h & -(cmp)`, 92 B; an upper form with `<=`, 92 B, 1,147,713 oracle checks) vs the
+frozen 103 B lower / upper branchless bodies, random sub-ranges n = 1..32 plus mixed lengths, uniform queries; lab
+`bisect-lab.mjs` e8942567 (reviewed and APPROVED before its numbers counted). Traced, untimed: TurboFan inlines both
+bodies into every traced caller copy (lb:8, lb:mix, ub:8: 36 / 36); Maglev refuses the 103 B bodies at its 100 B single-inline cap and inlines the 92 B ones.
+Strict hold (entry QUIET, load1 2.78 vs baseline 2.21): v3 SLOWER at every fixed n for both pairs (lower 1.088..1.255,
+upper 1.101..1.279, +0.17..1.46 ns/op); never FASTER. Both mixed-length lanes VOIDed on A/A drift and are not quoted (the
+second such episode; LEDGER C6 reopened). Run 1 (host PRELIMINARY, non-verdict) agreed except lower n = 1 (WITHIN).
+Ruled (maintainer, INTAKE A5): KEEP 103 B for both pairs on the fixed lanes; Q-BODY "(c) as written (Recommended)": the P1 bytecode gate
+on the branchless pair pins TurboFan inlining only and the docs say Maglev does not inline it. Why v3 is slower is not
+traced (hypothesis: `-(false)` is -0, a double, so the mask may leave int32); an int32-mask form with the folded guard
+reads 104 B (untimed). Not covered: x86 (R-10), Maglev-tier timing, a caller that stays in Maglev.
