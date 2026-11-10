@@ -46,8 +46,8 @@ number from them is never quoted as this package's number.
 
 ## 0. The laws (read this first)
 
-All 11 are inherited today. Each becomes this package's own law once a `C<n>` entry here
-confirms it.
+All 11 were inherited. Each becomes this package's own law once a `C<n>` entry here confirms
+it: law 3 (C1, C3) and law 8 (C2) are confirmed on this package as of 2026-11-10.
 
 1. **Time the consumer, not the search.** A branchless search's result is data at the end of a
    chain of loads; whatever consumes it waits. Branchless read 2-4x faster alone and an
@@ -115,9 +115,10 @@ on these kernels. No single green gate authorises a release.
   in that loop. The single-kind trace and torture's 4-kind lane could not see it.
 - **Reason:** the inliner charges a callee's bytes to the caller's cumulative budget.
 - **Evidence:** LiteLogLogN/LEDGER.md #52. Fixed with a 91 B body and a gate `_lb16 <= 94`.
-- **Here:** the draft's `lowerBoundBranchless` is the same family (98 B measured on the
-  LogLogN copy, RESEARCH 17.3). A shared kernel multiplies the risk across every adopting
-  package. Gate: ROADMAP section 6 bytecode gate, plus a caller trace at each P2 adoption.
+- **Here:** the draft's `lowerBoundBranchless` is the same family but NOT the same body: it
+  reads 103 B on node v26.8.2 (C1), not LogLogN's 98 B. A shared kernel multiplies the risk
+  across every adopting package. Gate: ROADMAP section 6 bytecode gate, plus a caller trace at
+  each P2 adoption.
 
 ### I3. EXPECTED inlining is not TRACED inlining *(LiteLogLogN #35, standing)*
 - **What happened:** a "never inlined" claim was expectation; the trace showed which bodies
@@ -207,7 +208,46 @@ on these kernels. No single green gate authorises a release.
 
 ## C. Measurement lessons (this package's own runs)
 
-None yet. P0 research adds them (R-1, R-2, R-4, R-8).
+### C1. An inherited byte count described a different body *(FOUND 2026-11-10, P0 U2)*
+- **What happened:** ROADMAP R-11 and LEDGER I2 said the branchless kernel is "98 B, just under
+  Maglev's 100 B". The frozen draft's `lowerBoundBranchless` reads 103 B (`upperBoundBranchless`
+  103 B); Maglev refuses it ("big function, size (103) >= max-size (100)") on every call path.
+- **Root cause:** 98 B was LiteLogLogN's `_lb16` (Uint16Array, base offset), copied across as if
+  it described this body. The draft's empty-range guard alone costs 10 B (93 B without it).
+- **Evidence:** `.handoff/research/p0/PROGRESS.md` U2 + U2x; logs/u2-bytecode.log,
+  u2x/v.mjs (sha 700464a0): v3 (guard folded into the return, `h & -(a[b + h] < x)`) 92 B,
+  1,147,713 oracle checks, 0 bad; speed unmeasured.
+- **Law:** 3 (EXPECTED is not TRACED) extended: a number inherited from another package's body
+  is a hypothesis about this body until measured here.
+- **Gate:** none yet. P1 bytecode gate `< 100 B` on every kernel Maglev should inline.
+
+### C2. A non-Smi F64 query boxes 16 B per call across a non-inlined call *(MEASURED 2026-11-10, P0 U3)*
+- **What happened:** every kernel reads 0.07 B/op (= the floor) when inlined into its caller.
+  With `--no-turbo-inlining` (an optimized callee that is not inlined), smi queries stay at
+  0.07 and frac / >= 2^31 / NaN queries read 16.06 = one HeapNumber per call, all 8 kernels.
+- **Root cause:** a double argument crosses a real call as a HeapNumber (LEDGER I8, FastBit32
+  law 1, here on the query instead of a result).
+- **Evidence:** `.handoff/research/p0/PROGRESS.md` U3; logs/u3-bench.log, u3-bench-noinl.log,
+  u3-diag.log. alloc-per-op d4386d85, node v26.8.2, load1 13.5-34.8 (untimed).
+- **Law:** 8 confirmed on this package: zero-GC holds where the kernel inlines into its caller,
+  or the query is a Smi. The contract must say so; R-11's selector is free on inlining (U2),
+  so a selected kernel inlines exactly where a directly imported one does.
+- **Gate:** none yet. P1 alloc gate needs a not-inlined lane with a non-Smi query, which must
+  read one box (16 B), so the gate is seen to work.
+
+### C3. Per-type feedback: one shared fn and a factory both go megamorphic; a type-dispatch front keeps it *(MEASURED 2026-11-10, P0 U1)*
+- **What happened:** fed Float64 / Float32 / Uint32 / Uint16 / Int32 in turn, one shared
+  `lowerBoundBranchless` ends MEGAMORPHIC on both keyed loads (U1a). Five closures from one
+  literal move the SAME sites to MEGAMORPHIC (U1b, lazy and eager feedback allocation alike).
+  An `instanceof` front over five per-type literals leaves all ten callee sites MONOMORPHIC
+  (U1c raw states; the tool's own verdict on that pair was NO-VERDICT, U1cw corroborates).
+- **Root cause:** one FeedbackCell per function literal per native context (V8
+  function-architecture.md, feedback-cell.h).
+- **Evidence:** `.handoff/research/p0/PROGRESS.md` U1; logs/u1-*.log; ic-diff 11279540.
+- **Law:** none new (3 confirmed: the ROADMAP's "believed to share ONE feedback vector" was a
+  hypothesis; it held).
+- **Gate:** none yet. R-4 option 2 (factory) is dead on this evidence; option 1 (one literal per
+  type, hand-written or generated) and the front stay in.
 
 ---
 
@@ -222,6 +262,16 @@ None yet. P0 research adds them (R-1, R-2, R-4, R-8).
 - **Evidence:** this session's check; ROADMAP.md section 9 table.
 
 ---
+
+### D2. A measurement tool's STEADY figure failed open *(FOUND 2026-11-10, P0 U3; LiteUtils defect, reported)*
+- **What happened:** alloc-per-op printed STEADY 0.13..0.17 B/op for 12 lanes whose windows read
+  e.g. `0.21 0.14 16.13 16.06 16.06`: STEADY = min of windows 1..K-1, so a later tier that boxes
+  more is hidden. Its header (alloc-per-op.mjs:49) claims STEADY "is never below the true cost".
+- **Evidence:** logs/u3-bench-noinl.log line 31 (checked by the orchestrator).
+- **Law:** 9 (a gate fails open until a control proves it closed) on the TOOL, not the code:
+  a tool's own fail-closed claim is a hypothesis until a lane that changes tier mid-run shows it.
+- **Gate:** LiteBisect's P1 alloc gate reads every window >= 1 (ROADMAP section 6); the fix
+  belongs in LiteUtils.
 
 ## Not yet covered
 

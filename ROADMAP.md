@@ -158,7 +158,11 @@ NaN query -> `lo`, no validation, no throw, no allocation (allocation unmeasured
 - **R-8 Allocation:** every kernel 0 B/op through the LiteUtils `alloc-per-op.mjs` probe,
   including F64 queries that are fractional or >= 2^31 (zero-box law).
 - **R-9 Upper-bound and nearest helpers.** Charts needs nearest; Keyframe, Scrollforge and
-  Repair need "segment" (upper - 1). Thin wrappers or caller code?
+  Repair need "segment" (upper - 1). Thin wrappers or caller code? Read the ecosystem API
+  first (one research pass, while drafting the PROPOSAL): d3-array `bisectLeft` /
+  `bisectRight` / `bisectCenter` (`bisectCenter` is the "nearest" helper), Python `bisect`
+  (`lo`, `hi`, `key=`), C++ `lower_bound` / `upper_bound` / `equal_range`. It settles the
+  naming (lower / upper vs left / right) and whether nearest and segment ship.
 - **R-10 Other CPUs.** Every number is one Apple M4 Pro. Branch prediction does not transfer.
   An x86 CI run is the minimum before any "faster" claim.
 - **R-11 A setup-time selector over the exported kernels** (maintainer proposal, 2026-11-10).
@@ -167,9 +171,17 @@ NaN query -> `lo`, no validation, no throw, no allocation (allocation unmeasured
   (`type`, `feedsWrite`, `static`, `coherent`) and return ONE of the exported functions. The
   caller stores it in a module const or a field that never changes, and calls it directly.
   - Why at setup, not per call: a per-call dispatch (a table lookup, or an indirect call)
-    makes the call site polymorphic and blocks inlining. The branchless body is 98 B, just under
-    Maglev's 100 B single-inline limit (17.3). The facts that decide the strategy (feeds a
+    makes the call site polymorphic and blocks inlining. (Correction 2026-11-10, P0 U2: the
+    "98 B, just under Maglev's 100 B" figure was LiteLogLogN's `_lb16`; the draft's
+    `lowerBoundBranchless` is 103 B, so Maglev does not inline it at its default limit; a
+    correct 92 B form exists, speed unmeasured.) The facts that decide the strategy (feeds a
     write, static, coherent) are not visible at call time anyway (section 1).
+  - P0 results (untimed, 2026-11-10, `.handoff/research/p0/PROGRESS.md`): a module const or a
+    field returned by a selector gets the SAME inlining decision as a direct import (U2). A
+    type-dispatch front over per-type literal kernels keeps each kernel's feedback monomorphic
+    (U1c); one shared function fed 5 types goes megamorphic (U1a); a factory shares one
+    feedback vector across its closures, so it cannot separate types (U1b). A non-Smi F64
+    query boxes 16 B per call across a non-inlined call (U3).
   - Each table row ("traits -> kernel") is a STATISTICAL claim and needs its evidence (R-1,
     R-2, R-3) on x86 as well as arm64 (R-10). A trait combination with no evidence returns the
     safe default (branchy where the result feeds a write).
@@ -184,6 +196,20 @@ NaN query -> `lo`, no validation, no throw, no allocation (allocation unmeasured
     `min_gallop`), and falls back to a fresh search when gallops keep missing.
   - Output: a Q-id in the P0 PROPOSAL with the trait names, the table and the default per
     row. New public surface, so no planner pass before the ruling.
+- **R-12 Interpolation search for near-uniform keys** (optional, post-1.0; added 2026-11-10).
+  MotionPath LUTs and many timestamp arrays are close to uniform, where interpolation search
+  is O(log log n). It is the one kernel family this roadmap did not consider. A spike rung:
+  interpolation (with a bounded fallback to branchless after k probes) vs branchless on
+  uniform, mildly skewed and adversarial keys; kill rule fixed before the run. Not a 1.0
+  blocker.
+- **Q-GUARD (PROPOSAL question, added 2026-11-10):** an out-of-range `[lo, hi)`, an unsorted
+  array or a NaN inside it gives a silently wrong answer today, which sits badly with the
+  suite's "fail closed" law. The hot kernels stay unchecked (bytes, inlining). The question is
+  the cold side: a `checkRange(a, lo, hi)` / `assertSorted(a, lo, hi)` helper, a debug entry
+  point, or a documented "caller owns the range" contract only.
+
+Source from an external review of lite-pick (RECOMMENDATIONS.md, read 2026-11-10): R-9's
+prior-art pass, R-12, Q-GUARD, and the section 6 / 7 / 9 additions marked "(lite-pick review)".
 
 ## 6. Verification plan, by tier
 
@@ -192,7 +218,26 @@ NaN query -> `lo`, no validation, no throw, no allocation (allocation unmeasured
   - boundary suite (empty range, `lo === hi`, `hi - lo = 1`, all-equal arrays, 2^30 cap);
   - Eytzinger over n = 0..1,000 exhaustively;
   - `alloc-per-op` gate at 0 B/op on every kernel, with a must-fail boxed lane;
-  - bytecode-size gate (`bytecode-budget.sh`): branchless <= 100 B so Maglev can inline it.
+  - bytecode-size gate (`bytecode-budget.sh`): branchless < 100 B so Maglev can inline it
+    (the frozen draft reads 103 B and FAILS this; P0 U2). The bound and the body are a
+    PROPOSAL question.
+  - the `alloc-per-op` gate reads every window >= 1, not only STEADY (P0 U3 found STEADY = min
+    fails open when a later tier boxes more).
+  - boundary inputs the draft-check oracle does not feed yet (lite-pick review): `-0` and `+0`
+    in the array and as the query, `lo > hi`, non-integer `lo` / `hi`, length-1 arrays,
+    subnormals, values next to 2^31 and 2^32 for the integer kinds. Each input gets a stated
+    outcome (an answer, or "caller error" under Q-GUARD).
+  - a committed mutant set (lite-pick review; LEDGER B1, I5): every mutant must be killed; a
+    mutant that never ran, crashed or timed out is a FAIL. It replaces the hand-run scratchpad
+    mutants. Starting set: the 6 from ROADMAP section 4, plus one per kernel per comparison.
+  - c8 coverage at 100% lines and 100% branches on the main file (lite-pick review); a branch
+    that cannot be covered is proven unreachable and removed.
+  - a types-compat fixture compiled under TS `node16`, `bundler` and `node10` resolution;
+    exact literal types in the `.d.ts` (e.g. `LINEAR_MAX: 8`) (lite-pick review).
+  - a packed-size budget (`npm pack --dry-run`), and the main file's size with comments
+    stripped (lite-pick review): "tiny" is part of the pitch, so it is measured.
+  - source comments: the shipped file keeps JSDoc to contract, complexity and ownership; design
+    history lives in the LEDGER / `decisions/`, never in the shipped file (lite-pick review).
 - **STATISTICAL (once per release, hosted CI):**
   - R-1, R-2 and R-3 as interleaved A/B with the 16.2 method;
   - each claim worded with its statistic, K rounds and a must-fail control.
@@ -203,7 +248,8 @@ NaN query -> `lo`, no validation, no throw, no allocation (allocation unmeasured
 
 ## 7. CI (sketch; the timing lane matters more here than for most packages)
 
-- **Every push:** `npm test` (DETERMINISTIC), Node 22 / 24 / 26.
+- **Every push:** `npm test` (DETERMINISTIC), Node 22 / 24 / 26; plus the types-compat
+  fixture and the packed-size budget (lite-pick review).
 - **Nightly:** the STATISTICAL lane on ubuntu-latest (x86) AND macos-latest (arm64). R-10 is the
   point: a branchless verdict from one ARM chip says nothing about x86 branch predictors. Upload
   the logs as artifacts; the verdicts are REPORTED until a release run gates them.
@@ -252,7 +298,7 @@ package.json depends on `@zakkster/lite-utils`.
 |---|---|---|
 | `alloc-per-op.mjs` | R-8; the 0 B/op gate on every kernel, with a must-fail boxed lane (section 6) | DETERMINISTIC |
 | `ic-diff.sh` | R-4 (does a factory share one feedback vector?); R-11 (does a type-dispatch front keep each kernel monomorphic?) | research probe |
-| `bytecode-budget.sh` | the bytecode gate: branchless body <= 100 B (17.3) | DETERMINISTIC on a pinned Node |
+| `bytecode-budget.sh` | the bytecode gate: branchless body < 100 B (Maglev's single-inline limit; the draft reads 103 B, P0 U2) | DETERMINISTIC on a pinned Node |
 | `inlining-budget-diff.sh` | R-11: does the kernel the selector returns still inline into the caller through a const / stored field? | research probe, then a gate if R-11 is adopted |
 | `deopt-diff.sh` | R-4: does a mixed-type app deopt a shared kernel, and do the per-type kernels stay clean? | research probe |
 | `allocation-diff.sh` | role here not decided: read its `-h` first (candidate: before / after allocation at P2 adoption) | TBD |
@@ -281,6 +327,14 @@ installed".
 minors, so your recommendation is accepted". The newest 1.x is installed when the lock is
 refreshed. A LiteUtils 2.0.0, if one ever ships, is not picked up until this package moves to
 `^2.0.0` on purpose. Declined: `>=1.0.0` (would take any future major too).
+
+**Open note on Q-LU-1a (2026-11-10, NOT a ruling):** an external review of lite-pick
+(RECOMMENDATIONS.md section 5) recommends pinning `@zakkster/*` tooling EXACTLY, because "a
+tooling update can move a perf gate". P0 produced a concrete case (LEDGER D2): when LiteUtils
+fixes alloc-per-op's STEADY fail-open, LiteBisect's alloc gate results change with no diff in
+this repo. That is a new mechanism, so the LEDGER rules allow reopening Q-LU-1a; whether to
+reopen is the maintainer's decision. Until then `^1.0.0` stands, with the installed version
+recorded in every run's provenance.
 
 Until LiteUtils >= 1.0.0 is published, P0 research probes call the tools from the LiteUtils
 checkout by absolute path, and record the LiteUtils commit + sha in each probe's provenance.
