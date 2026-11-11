@@ -333,6 +333,14 @@ lite-utils devDependency line is deferred. Section 6's "2^30 cap" means hi - lo 
   - Sites that feed a write stay branchy unless R-3 says otherwise.
 - **P3 release:** CI nightly green for a week, the STATISTICAL claims gated once, docs with
   tiers.
+  - Ruling P3-R1 (maintainer, 2026-11-11, asked "Should a benchmark be planned post 1.0.0 or
+    prior?"; answer "As you recommend"): the STATISTICAL A/B (hint vs branchless, branchless vs
+    branchy; interleaved, hosted CI on x86 AND arm64, R-10) is gated BEFORE `/release 1.0.0`,
+    because the README choice table's "When" advice rests on one Apple M4 Pro (PRELIMINARY) and
+    an inherited I1; the REPORTED n-sweep tables wait until after 1.0.0 (docs only, a 1.0.x
+    docs release). Not chosen: ship 1.0 as correctness-only with neutral "When" wording and
+    move every benchmark to 1.1. Needs first: the CI workflow (owner open, section 7) and the
+    A/B tests (a research rung, then a gate unit); both may run during the final audit.
 
 The likely outcome to plan for: the main value is ONE tested set of kernels with one contract
 replacing ~28 copies; speed wins are per site and must be shown per site.

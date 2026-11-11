@@ -81,7 +81,7 @@ const n = nearestF64(a, 0, 5, 4);                // 2 (tie -> lower)
 oracle per type (4 seeds), boundary table, mutants (100 rows, all killed), torture with a
 retained-heap gate, c8 100% lines / branches, golden parity of the generated kernels, a TurboFan
 inline pin, tsc type checks (node16 / nodenext / bundler) with an export-parity test, a doc-truth
-test. The size / pack gate (npm run size: pack file list + committed budgets) and npm run verify (test + torture + coverage + size + gates:local) are deterministic but outside npm test. The alloc + bytecode gates (npm run gates:local, LiteUtils tools) run on the pinned Node
+test. Tree-shaking is gated under esbuild 0.28 only (one-kernel bundles carry that kernel plus its callees and no other top-level code; sideEffects: false honoured); webpack / rollup not tested. The size / pack gate (npm run size: pack file list + committed budgets) and npm run verify (test + torture + coverage + size + gates:local) are deterministic but outside npm test. The alloc + bytecode gates (npm run gates:local, LiteUtils tools) run on the pinned Node
 v26.8.2 only and are not yet in npm test or hosted CI.
 
 ## What this is not

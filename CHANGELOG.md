@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tools, pinned Node only, not yet in `npm test` or hosted CI), tsc type checks, a doc-truth test, and a size / pack gate (`npm run size`: the tarball file list and
   committed size budgets; DETERMINISTIC, not in `npm test`). `npm run verify` chains test, torture, coverage,
   size and gates:local, fail-fast.
+- Tree-shaking gate under esbuild (`test/Bisect.shake.test.mjs`, in `npm test`); devDependency esbuild ^0.28.2.
 - README, `llms.txt`, MIT `LICENSE.txt`.
 
 ### Not shipped from the draft

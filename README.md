@@ -5,6 +5,7 @@
 [![npm version](https://img.shields.io/npm/v/@zakkster/lite-bisect.svg?style=for-the-badge&color=latest)](https://www.npmjs.com/package/@zakkster/lite-bisect)
 [![sponsor](https://img.shields.io/badge/sponsor-PeshoVurtoleta-ea4aaa.svg?logo=github)](https://github.com/sponsors/PeshoVurtoleta)
 ![Zero-GC](https://img.shields.io/badge/Zero--GC-Engine-00C853?style=for-the-badge&logo=leaf&logoColor=white)
+![Tree-Shakeable](https://img.shields.io/badge/tree--shakeable-yes-brightgreen)
 [![npm bundle size](https://img.shields.io/bundlephobia/minzip/@zakkster/lite-bisect?style=for-the-badge)](https://bundlephobia.com/result?p=@zakkster/lite-bisect)
 [![npm downloads](https://img.shields.io/npm/dm/@zakkster/lite-bisect?style=for-the-badge&color=blue)](https://www.npmjs.com/package/@zakkster/lite-bisect)
 [![npm total downloads](https://img.shields.io/npm/dt/@zakkster/lite-bisect?style=for-the-badge&color=blue)](https://www.npmjs.com/package/@zakkster/lite-bisect)
@@ -296,10 +297,12 @@ The alloc and bytecode gates are `npm run gates:local` (the LiteUtils tools, com
 
 ## Testing
 
-`npm test` runs 108 tests, 108 pass, 0 fail (`.handoff/p1/evidence/u9r2-npm-test.log`, 2026-11-11T16:00:12Z, node v26.8.2, load averages 3.48 3.47 3.32; one run). They cover: a naive-reference oracle per type (4 seeds each), a boundary table (every kernel x type), the contract rows for `segment` / `nearest` / the asserts, mutant kills, golden parity of the generated kernels, the TurboFan inline pin, the types check, and doc truth (snippets, Q-BOX, banned tokens; `test/Bisect.docs.test.mjs`).
+`npm test` runs 120 tests, 120 pass, 0 fail (`.handoff/p1/evidence/shake-r2-npm-test.log`, 2026-11-11T16:36:39Z, node v26.8.2, load averages 2.21 3.60 5.90; one run). They cover: a naive-reference oracle per type (4 seeds each), a boundary table (every kernel x type), the contract rows for `segment` / `nearest` / the asserts, mutant kills, golden parity of the generated kernels, the TurboFan inline pin, the types check, doc truth (snippets, Q-BOX, banned tokens; `test/Bisect.docs.test.mjs`), and tree-shaking (`test/Bisect.shake.test.mjs`).
+
+Tree-shaking is gated under esbuild 0.28 only (`test/Bisect.shake.test.mjs`, deterministic, part of `npm test`). A bundle that imports one kernel contains that kernel, the kernels it calls (lowerBoundHint* and nearest* call lowerBoundBranchless*, segment* calls upperBoundBranchless*, assertSorted calls assertRange), and no other top-level code. A bare side-effect import of Bisect.js (the gate imports it by path) emits no kernel, and esbuild reports that it honours `"sideEffects": false`. webpack, rollup and terser are not tested.
 
 ```bash
-npm test               # oracle, boundary, mutants, golden parity, gen check, inline pin, types, doc truth
+npm test               # oracle, boundary, mutants, golden parity, gen check, inline pin, types, doc truth, tree-shaking
 npm run torture        # node --expose-gc test/torture.mjs : leak + retained-heap gate
 npm run coverage       # c8, 100% lines and branches required
 npm run test:types     # tsc in node16 / nodenext / bundler resolution + export parity
