@@ -1,0 +1,76 @@
+{
+  "source": {
+    "path": ".handoff/frozen/87389fb-3af35dca/Bisect.draft.js",
+    "sha256": "3af35dca6e9a9e8ad3d43fcd9bb0594c427785656c046f53ffbdd4c66d38a0f1",
+    "commit": "7fcf8fd"
+  },
+  "node": "v26.8.2",
+  "seeds": [
+    12345,
+    777
+  ],
+  "rounds": "0..69",
+  "stream": "PRNG (xorshift32 as draft-check.mjs): s = seed >>> 0; rnd() { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; return (s >>> 0) / 4294967296 } (JS number ops on s). For round = 0..69 (rounds 70..399 of draft-check are NOT replayed): n = round (no rnd draw). Array: a = new Float64Array(n); v = -50 + rnd() * 10; for i = 0..n-1 { if (rnd() < 0.7) v += (rnd() < 0.5 ? 1 : rnd() * 3); a[i] = v } (the inner rnd() calls are evaluated left to right, short-circuit as written). Queries qs: [NaN, -Infinity, Infinity, -1e9, 1e9], then for i = 0..n-1 push a[i], a[i] - 0.5, a[i] + 0.5 (double arithmetic). Ranges: if n <= 24, every [lo, hi) with 0 <= lo <= hi <= n, lo ascending outer, hi ascending inner, no rnd draw; else [0, n] first, then 20 times { lo = (rnd() * (n + 1)) | 0; hi = lo + ((rnd() * (n - lo + 1)) | 0) } (lo drawn before hi), all range draws of a round before any query. Loop: for each range in order, for each x in qs in order: wl = the first i in [lo, hi) with a[i] >= x, else hi (lo for a NaN x); hs = [lo, hi, lo - 3, hi + 3, NaN, lo + ((rnd() * (hi - lo + 1)) | 0), wl] -- exactly ONE rnd() per (range, x), drawn here, so the PRNG sequence is the same for every kernel stream. Streams (kernel K = <K>F64 in Bisect.js): lowerBoundBranchless, upperBoundBranchless, lowerBoundBranchy, upperBoundBranchy append ONE answer K(a, lo, hi, x) per (round, range, x); lowerBoundHint appends SEVEN answers lowerBoundHint(a, lo, hi, x, h), h in hs order. Each stream is an Int32Array of the answers in loop order (round, range, x[, h]); count = its element count; sha256 = lowercase hex SHA-256 of its bytes, Int32 little-endian. kernels.<K> lists one {seed, count, sha256} per seed, in seeds order.",
+  "kernels": {
+    "lowerBoundBranchless": [
+      {
+        "seed": 12345,
+        "count": 310545,
+        "sha256": "6cc2bf090ad23d52281920d4fc858f62a91220c768bf2f66f386817ab1414e43"
+      },
+      {
+        "seed": 777,
+        "count": 310545,
+        "sha256": "71642022f100dd1f243137e8f3bd8b1b2f33510051eca64692909f3a9474b294"
+      }
+    ],
+    "upperBoundBranchless": [
+      {
+        "seed": 12345,
+        "count": 310545,
+        "sha256": "14f118e8f2be876e7e438674e87226ddc3ae864627900d1fa3945665827a12f8"
+      },
+      {
+        "seed": 777,
+        "count": 310545,
+        "sha256": "54ec13a531917e61b4fbc60c67e1c664ae2a6cb015edcb44cc33f985284a0e1d"
+      }
+    ],
+    "lowerBoundBranchy": [
+      {
+        "seed": 12345,
+        "count": 310545,
+        "sha256": "6cc2bf090ad23d52281920d4fc858f62a91220c768bf2f66f386817ab1414e43"
+      },
+      {
+        "seed": 777,
+        "count": 310545,
+        "sha256": "71642022f100dd1f243137e8f3bd8b1b2f33510051eca64692909f3a9474b294"
+      }
+    ],
+    "upperBoundBranchy": [
+      {
+        "seed": 12345,
+        "count": 310545,
+        "sha256": "14f118e8f2be876e7e438674e87226ddc3ae864627900d1fa3945665827a12f8"
+      },
+      {
+        "seed": 777,
+        "count": 310545,
+        "sha256": "54ec13a531917e61b4fbc60c67e1c664ae2a6cb015edcb44cc33f985284a0e1d"
+      }
+    ],
+    "lowerBoundHint": [
+      {
+        "seed": 12345,
+        "count": 2173815,
+        "sha256": "1961cd2d03e3e473b592e655870926470404022dcb493c04e4fd6791c2d2e5fc"
+      },
+      {
+        "seed": 777,
+        "count": 2173815,
+        "sha256": "e361f088064257ea5c6f5b2b99dd63be5396146117745e9939f8defeae8fa34c"
+      }
+    ]
+  }
+}

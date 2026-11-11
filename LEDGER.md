@@ -246,6 +246,20 @@ on these kernels. No single green gate authorises a release.
 - **Gate:** P1 U3 boundary suite (test/Bisect.boundary.test.mjs): every kernel returns at hi - lo = 2^30 - 1; assertRange throws at 2^30.
   Reopens with: a hint body edit, or a cap change.
 
+### B3. A non-integer hint h hangs `lowerBoundHint` *(FOUND 2026-11-11, P1 U2 review; RULED P1-R9)*
+- **What happened:** `lowerBoundHintF64` over 0..15, range [0, 16), x = 5: h = 10.5 never returns (the left gallop
+  leaves the fractional bracket [0, 2.5) and the branchless loop runs forever at n = 1.5; killed after 4 s); h = 2.5
+  returns 1 where the answer is 5. The frozen draft body does the same. The U2 header said only "clamped to [lo, hi]".
+- **Root cause:** the hint clamps h to [lo, hi] and maps NaN to lo, but never makes it an integer; every index the
+  gallop derives from h inherits the fraction, and the branchless body assumes an integer range (law 4: no guard).
+- **Evidence:** U2 review, .handoff/p1/SPEC-p1.md addendum r4; parked Bisect.js 79e92c19 (.handoff/rejected/U2);
+  frozen draft 3af35dca. node v26.8.2, by hand, not by a gate.
+- **Law:** 9 (the contract named no domain for h, so no gate fed one). Fix: the contract, not the body (law 4):
+  P1-R9 "Caller error, documented (Recommended)": h is an integer index or NaN; a non-integer h may return a wrong
+  index or never return. No hot bytes, no new export, no cold check.
+- **Gate:** none (a caller error is documented, not checked); the Bisect.js header and the .d.ts JSDoc state it (U2,
+  U7). Reopens with: a hint body edit, a cold check for h, or a consumer that derives h from a double.
+
 ---
 
 ## C. Measurement lessons (this package's own runs)

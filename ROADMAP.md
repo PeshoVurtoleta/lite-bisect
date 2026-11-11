@@ -251,6 +251,7 @@ The program spec is `.handoff/p1/SPEC-p1.md` (gitignored). Rulings, quoted:
 | P1-R6 | ">=22 (Recommended)" | `engines.node` ">=22", the section 7 CI matrix |
 | P1-R7 | "Follow the B1 NaN contract (Recommended)" | NaN query: `nearest` -> lo, `segment` -> lo - 1; an exact match (+-Infinity included) wins; past either end -> lo or hi - 1; tie -> LOWER index |
 | P1-R8 | "Cap at 2^30 - 1 (Recommended)" | Q-GUARD's cap becomes hi - lo <= 2^30 - 1: `assertRange` throws RangeError at 2^30, because the frozen hint body never returns there (LEDGER B2); no hot byte changes |
+| P1-R9 | "Caller error, documented (Recommended)" | `lowerBoundHint`'s h must be an integer index or NaN (NaN -> lo; outside [lo, hi] clamped); a non-integer h is a caller error that may return a wrong index or never return (the frozen body hangs on h = 10.5), like a non-integer range; documented in the Bisect.js header and the .d.ts JSDoc; no hot bytes, no new export, no cold check (asked 2026-11-11 in the P1 coder burst after the U2 review) |
 
 Planner details settled in the spec (not rulings): 37 exports, `<kernel><T>` suffix names with T in F64 / F32 / U32 /
 U16 / I32; `segment` and `nearest` are per-type (a shared wrapper would need a type dispatch, refused by Q-FRONT, and

@@ -1,0 +1,48 @@
+{
+  "name": "@zakkster/lite-bisect",
+  "version": "0.0.0",
+  "description": "Zero-GC binary search kernels for sorted typed arrays: branchless and branchy lower / upper bound, a galloping hint search, segment and nearest, one monomorphic copy per array type (Float64, Float32, Uint32, Uint16, Int32).",
+  "author": "Zahary Shinikchiev <shinikchiev@yahoo.com>",
+  "license": "MIT",
+  "type": "module",
+  "main": "./Bisect.js",
+  "module": "./Bisect.js",
+  "types": "./Bisect.d.ts",
+  "exports": {
+    ".": {
+      "types": "./Bisect.d.ts",
+      "node": "./Bisect.js",
+      "import": "./Bisect.js",
+      "default": "./Bisect.js"
+    }
+  },
+  "files": [
+    "Bisect.js",
+    "Bisect.d.ts",
+    "llms.txt",
+    "LICENSE.txt",
+    "CHANGELOG.md",
+    "README.md"
+  ],
+  "scripts": {
+    "gen": "node scripts/gen.mjs",
+    "gen:check": "node scripts/gen.mjs --check"
+  },
+  "keywords": [
+    "binary-search",
+    "bisect",
+    "lower-bound",
+    "upper-bound",
+    "branchless",
+    "sorted",
+    "typed-array",
+    "zero-gc",
+    "zero-allocation",
+    "zakkster"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "sideEffects": false,
+  "dependencies": {}
+}
