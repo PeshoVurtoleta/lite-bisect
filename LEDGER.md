@@ -233,6 +233,19 @@ on these kernels. No single green gate authorises a release.
 - **Law:** 9. **Gate:** `draft-check.mjs` (becomes node:test in P1). Every kernel uses the one
   predicate `a[i] < x` (lower) or `a[i] <= x` (upper), negated with `!`, never flipped.
 
+### B2. `lowerBoundHint` never returned at hi - lo = 2^30 *(FOUND 2026-11-11, P1 spec review r1; RULED P1-R8)*
+- **What happened:** with hi - lo = 2^30 exactly, the hint at hi and x <= a[lo] (or a NaN query), the left
+  gallop doubles `step` to 2^30, then `step <<= 1` wraps to -2^31 and then 0, so `l = h` repeats forever. Q-GUARD's
+  ruled cap (hi - lo <= 2^30) admitted that range. At 2^30 - 1 every kernel returns. Found by hand on the frozen
+  draft body (monotone Proxy array), not by a gate: draft-check never feeds a range near the cap.
+- **Root cause:** a 32-bit shift on a step that the cap lets reach 2^30; the right gallop stops earlier because
+  `r < hi` fails first.
+- **Evidence:** .handoff/p1/SPEC-p1.md addendum r1; frozen draft 3af35dca (`lowerBoundHint`, left gallop).
+- **Law:** 9 (the cap was never fed to the kernel it protects). Fix: the cap, not the body (law 4: no hot bytes):
+  P1-R8 "Cap at 2^30 - 1 (Recommended)", assertRange throws RangeError at hi - lo = 2^30.
+- **Gate:** P1 U3 boundary suite (test/Bisect.boundary.test.mjs): every kernel returns at hi - lo = 2^30 - 1; assertRange throws at 2^30.
+  Reopens with: a hint body edit, or a cap change.
+
 ---
 
 ## C. Measurement lessons (this package's own runs)

@@ -237,6 +237,28 @@ The PROPOSAL (`.handoff/PROPOSAL-bisect.md`, gitignored) is the first planner pa
 Also ruled: the INTAKE A1 departure accepted (non-strict timed runs on a PRELIMINARY host are non-verdict runs; INTAKE A2); a tracked
 RESEARCH.md created; Q-LU-1a NOT reopened (section 9).
 
+## 5b. P1 planner rulings (maintainer, 2026-11-11, AskUserQuestion during the P1 planner pass)
+
+The program spec is `.handoff/p1/SPEC-p1.md` (gitignored). Rulings, quoted:
+
+| Id | Ruling | Means |
+|---|---|---|
+| P1-R1 | "Wire now, I will ping when ready. [...] the scripts can be used" | the alloc-per-op / bytecode-budget gates call the local LiteUtils checkout now (`LITE_UTILS_DIR`); `@zakkster/lite-utils` is not in package.json until 1.0 is on npm (it is 0.0.0, private, npm 404 on 2026-11-11); `gates` stays out of `npm test` and hosted CI until then; 1.0 of this package waits for a green `gates` run |
+| P1-R2 | "Hand-written + parity test (Recommended)" | `Bisect.d.ts` is hand-written; a test checks it against the runtime exports (set, arity, array type) with must-fail mutants |
+| P1-R3 | "RangeError for both (Recommended)" | `assertSorted` throws RangeError (it calls `assertRange` first) |
+| P1-R4 | "No, lo / hi only (Recommended)" | `assertRange` checks lo / hi only and reads only `a.length` |
+| P1-R5 | "Exact pin (Recommended)" | `typescript` devDependency pinned exactly; every types-gate run records `tsc --version` |
+| P1-R6 | ">=22 (Recommended)" | `engines.node` ">=22", the section 7 CI matrix |
+| P1-R7 | "Follow the B1 NaN contract (Recommended)" | NaN query: `nearest` -> lo, `segment` -> lo - 1; an exact match (+-Infinity included) wins; past either end -> lo or hi - 1; tie -> LOWER index |
+| P1-R8 | "Cap at 2^30 - 1 (Recommended)" | Q-GUARD's cap becomes hi - lo <= 2^30 - 1: `assertRange` throws RangeError at 2^30, because the frozen hint body never returns there (LEDGER B2); no hot byte changes |
+
+Planner details settled in the spec (not rulings): 37 exports, `<kernel><T>` suffix names with T in F64 / F32 / U32 /
+U16 / I32; `segment` and `nearest` are per-type (a shared wrapper would need a type dispatch, refused by Q-FRONT, and
+its reads would go megamorphic, LEDGER C3). Void at 1.0 (Q-KERNELS): section 6's Eytzinger item and the
+`LINEAR_MAX: 8` example, and 2 of section 4's 6 starting mutants (Eytzinger, linear). Until LiteUtils 1.0 is on npm
+(P1-R1), section 6's alloc-per-op and bytecode-size gates run in `npm run gates`, not `npm test`, and section 8's P1
+lite-utils devDependency line is deferred. Section 6's "2^30 cap" means hi - lo <= 2^30 - 1 (P1-R8).
+
 ## 6. Verification plan, by tier
 
 - **DETERMINISTIC (`npm test`):**
