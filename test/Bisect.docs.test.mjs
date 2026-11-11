@@ -1,10 +1,12 @@
-// test/docs/docs.test.mjs -- assertion 12 (SPEC-p1 U7 T5; M5: outside the npm-test glob until U9 moves it).
+// test/Bisect.docs.test.mjs -- assertion 12 (SPEC-p1 U7 T5). M5: U9 moved it from test/docs/docs.test.mjs into the
+// npm-test glob (test/*.test.mjs), so `npm test` and `npm run coverage` run it with every other suite file.
 // Doc truth over README.md, llms.txt, CHANGELOG.md, Bisect.d.ts, Bisect.js (a missing file is a FAIL,
 // never a skip). ONE verdict function, docsProblems(texts: Map file -> text), loops each check over its own
 // file list and returns '<check> <file>: ...' strings; every real row ("docs: ...") asserts its check's
 // slice of docsProblems(live files) is [], and the in-memory must-fail controls ("control: ...") plant one
-// violation per (check, file) pair and read the SAME docsProblems (LEDGER B5). So `node --test --test-name-pattern=control
-// test/docs/docs.test.mjs` runs the controls alone (U7) and U8 runs the whole file. LEDGER law 9, B5 / B6.
+// violation per (check, file) pair and read the SAME docsProblems (LEDGER B5). The controls alone:
+// `node --test --test-name-pattern=control test/Bisect.docs.test.mjs`; the whole file: `node --test
+// test/Bisect.docs.test.mjs`. LEDGER law 9, B5 / B6.
 //
 // Checks:
 //   exports     every export name of Bisect.js (runtime Object.keys) appears in README.md and llms.txt as a
@@ -35,7 +37,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const ROOT = fileURLToPath(new URL('../..', import.meta.url));
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const BISECT = join(ROOT, 'Bisect.js');
 const DOCS = ['README.md', 'llms.txt', 'CHANGELOG.md', 'Bisect.d.ts', 'Bisect.js'];
 const QBOX_FILES = ['README.md', 'llms.txt', 'Bisect.d.ts', 'Bisect.js'];
@@ -307,7 +309,7 @@ test('control: docsProblems -- 19 planted (check, file) cases', () => {
 });
 
 test('control: a missing doc file is reported missing', () => {
-    const r = loadDocs(join(ROOT, 'test', 'docs', 'no-such-dir'), DOCS);
+    const r = loadDocs(join(ROOT, 'test', 'no-such-dir'), DOCS);
     assert.deepEqual(r.missing, DOCS);
 });
 

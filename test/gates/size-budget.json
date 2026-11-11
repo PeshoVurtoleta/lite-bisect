@@ -1,0 +1,6 @@
+{
+  "about": "U9 size / pack budgets (test/gates/size.test.mjs). Committed literals, never computed in the run that checks them (LEDGER law 9). Each budget = measured + 5% (floor), headroom < 10% so the measured x 1.10 control trips. Measured 2026-11-11, node v26.8.2, npm 11.19.1, HEAD d5d5736 + working tree (U8 docs, U9 package.json scripts), Bisect.js 43add0b5: tarballBytes 14028 (npm pack --dry-run --json size), unpackedBytes 60918 (unpackedSize), strippedBisectBytes 10094 (Bisect.js 13928 B raw, comments stripped). Raise a budget only by re-measuring and re-recording here.",
+  "tarballBytes": 14729,
+  "unpackedBytes": 63963,
+  "strippedBisectBytes": 10598
+}

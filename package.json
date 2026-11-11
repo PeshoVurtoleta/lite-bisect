@@ -32,6 +32,8 @@
     "gates": "node --test test/gates/alloc.test.mjs test/gates/bytecode.test.mjs",
     "gates:local": "LITE_UTILS_DIR=../LiteUtils npm run gates",
     "test:types": "node --test test/types.test.mjs test/types.exports.test.mjs",
+    "size": "node --test test/gates/size.test.mjs",
+    "verify": "npm test && npm run torture && npm run coverage && npm run size && npm run gates:local",
     "coverage": "c8 --include=Bisect.js --temp-directory node_modules/.c8/tmp --report-dir node_modules/.c8/report --reporter=text --reporter=text-summary --check-coverage --lines 100 --branches 100 node --test \"test/!(*.inline|*.mutants).test.mjs\""
   },
   "keywords": [

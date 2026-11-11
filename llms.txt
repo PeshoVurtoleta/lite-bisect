@@ -1,0 +1,98 @@
+# @zakkster/lite-bisect
+
+Zero-GC binary search kernels for sorted typed arrays. Lower / upper bound
+(branchless and branchy), a galloping hint search, segment and nearest. One
+monomorphic copy of every kernel per array type: F64 (Float64Array), F32
+(Float32Array), U32 (Uint32Array), U16 (Uint16Array), I32 (Int32Array).
+Single-file ESM (Bisect.js), hand-written types (Bisect.d.ts), zero runtime
+dependencies, Node >= 22.
+
+## Exports (37)
+
+7 kernel families x 5 suffixes = 35 kernels, plus 2 cold asserts. No classes,
+no state, no constants (none).
+
+Kernel signature: (a, lo, hi, x) => number. The hint kernel adds h.
+
+- lowerBoundBranchlessF64, lowerBoundBranchlessF32, lowerBoundBranchlessU32, lowerBoundBranchlessU16, lowerBoundBranchlessI32
+- upperBoundBranchlessF64, upperBoundBranchlessF32, upperBoundBranchlessU32, upperBoundBranchlessU16, upperBoundBranchlessI32
+- lowerBoundBranchyF64, lowerBoundBranchyF32, lowerBoundBranchyU32, lowerBoundBranchyU16, lowerBoundBranchyI32
+- upperBoundBranchyF64, upperBoundBranchyF32, upperBoundBranchyU32, upperBoundBranchyU16, upperBoundBranchyI32
+- lowerBoundHintF64, lowerBoundHintF32, lowerBoundHintU32, lowerBoundHintU16, lowerBoundHintI32   (a, lo, hi, x, h)
+- segmentF64, segmentF32, segmentU32, segmentU16, segmentI32
+- nearestF64, nearestF32, nearestU32, nearestU16, nearestI32
+- assertRange(a, lo, hi), assertSorted(a, lo, hi)   (cold; a is any of the five array types)
+
+## Contract
+
+- a: a sorted, non-decreasing typed array of the suffix's type, no NaN inside.
+- [lo, hi): half-open range, integers, 0 <= lo <= hi <= a.length, hi - lo <= 2^30 - 1.
+- lower: the first i in [lo, hi) with a[i] >= x, else hi.
+- upper: the first i in [lo, hi) with a[i] > x, else hi.
+- hint: lowerBoundHint*(a, lo, hi, x, h) is lower, galloping out from h. h is an integer
+  index or NaN (NaN -> lo; outside [lo, hi] clamped). A non-integer h is a caller error
+  that may return a wrong index or never return.
+- segment: upper - 1, the last i with a[i] <= x; lo - 1 when x < a[lo], on NaN, on an empty range.
+- nearest: the index closest to x. A tie between the last value below x and the first above
+  goes to the LOWER index. An exact match wins (the first i with a[i] === x). Within a run of
+  equal values, the index next to x. Empty range -> lo. NaN -> lo.
+- NaN query: every lower / upper / hint kernel returns lo; segment returns lo - 1; nearest returns lo.
+- The hot kernels trust the caller: no range check, no throw. A range outside the contract, an
+  unsorted array, a NaN inside the array, or a non-integer hint may return a wrong index or never
+  return. assertRange (RangeError unless the range is valid; reads only a.length) and assertSorted
+  (assertRange, then RangeError on a NaN in [lo, hi) or a descent) are cold: call them off the hot
+  path. No kernel calls them.
+
+## Allocation
+
+zero allocation where the kernel inlines into its caller, or the query is a Smi; a non-Smi number query passed across a call V8 does not inline boxes one 16 B HeapNumber.
+
+Pass a Smi query when a kernel sits across a call V8 does not inline.
+
+## Which call to choose
+
+- lowerBoundBranchless* / upperBoundBranchless*: the default for a read-only search. No speed is
+  claimed. TurboFan inlines the 103 B body; Maglev does not inline it at its default 100 B cap
+  (LEDGER C7; traced on the pinned Node v26.8.2, DETERMINISTIC inline pin).
+- lowerBoundBranchy* / upperBoundBranchy*: the result feeds a write (an insert position, a splice
+  index). Evidence I1 is inherited from another package and not re-run here: unproven for this package, no gate.
+- lowerBoundHint*: coherent query streams (each query near the previous answer). Slower on
+  incoherent streams; see RESEARCH.md 1.5. The timing evidence is PRELIMINARY (one CPU, Apple M4 Pro) and the
+  STATISTICAL lane is pending; no timing number is claimed.
+- segment* / nearest*: "which interval holds x" / "which key is closest to x".
+- assertRange / assertSorted: setup and tests only.
+- Call the per-type kernel by name. One call site fed several array types goes megamorphic
+  (LEDGER C3). There is no selector and no per-call front that picks a kernel (LEDGER A3, A5).
+
+## Usage
+
+```js
+import { lowerBoundBranchlessF64, segmentF64, nearestF64, assertRange } from "@zakkster/lite-bisect";
+
+const a = new Float64Array([1, 3, 3, 5, 8]);
+assertRange(a, 0, 5);                      // cold, once
+const i = lowerBoundBranchlessF64(a, 0, 5, 3);   // 1
+const s = segmentF64(a, 0, 5, 4);                // 2
+const n = nearestF64(a, 0, 5, 4);                // 2 (tie -> lower)
+```
+
+## Gates (deterministic unless stated)
+
+oracle per type (4 seeds), boundary table, mutants (100 rows, all killed), torture with a
+retained-heap gate, c8 100% lines / branches, golden parity of the generated kernels, a TurboFan
+inline pin, tsc type checks (node16 / nodenext / bundler) with an export-parity test, a doc-truth
+test. The size / pack gate (npm run size: pack file list + committed budgets) and npm run verify (test + torture + coverage + size + gates:local) are deterministic but outside npm test. The alloc + bytecode gates (npm run gates:local, LiteUtils tools) run on the pinned Node
+v26.8.2 only and are not yet in npm test or hosted CI.
+
+## What this is not
+
+Not a general search (typed arrays only, sorted, no NaN inside; no plain Array, no comparator).
+Not a sorter. Not a validator on the hot path. Not a polymorphic front (no lowerBound(a, ...)
+that picks a kernel; no length switch, no LINEAR_MAX, no lowerBoundLinear, no Eytzinger layout).
+Not a speed claim: no benchmark table ships.
+
+## Links
+
+README.md (full reference, evidence and provenance), CHANGELOG.md, Bisect.d.ts.
+
+MIT (c) Zahary Shinikchiev <shinikchiev@yahoo.com>
