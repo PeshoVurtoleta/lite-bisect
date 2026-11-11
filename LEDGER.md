@@ -321,6 +321,56 @@ on these kernels. No single green gate authorises a release.
 - **Gate:** `npm test` (types.exports) and test/docs/docs.test.mjs controls. Reopens with: a gate whose controls do not
   go through the same verdict function and list as its real row.
 
+### B8. `nearest*` was wrong on a rounded tie, and the oracle shared the kernel's expression *(FOUND 2026-11-11, final audit; RULED AU-R1 "FIX, 167 B body (Recommended)", AMENDED AU-R1a "Fable's 189 B body (Recommended)"; FIXED)*
+- **What happened:** `x - a[i - 1] <= a[i] - x` rounds both gaps; when they round equal but are not, the kernel took
+  the lower index although the upper is closer (F64 / F32 / I32, e.g. `[-3, 4]`, x = 0.5000000000000001, want 1). The
+  three oracles (test/oracle.mjs `naiveNearest`, `nearestWith`, `cfNearest`) used the same rounded expression, so
+  every oracle, boundary and fuzz row agreed with the bug; the generators never reach a rounded tie.
+- **Root cause:** a tie rule written on rounded differences; an expected value taken from the code under test (law 9).
+- **Evidence:** audit/2026-11-11-bisect/reviewer-fable/, reviewer-opus/, cross-fable/ (exact BigInt reference,
+  cross-repro.mjs: 22 fixed + 5 fuzz rows); host macOS arm64, node v26.8.2, loads as the CROSS.md files state.
+- **Law:** 9, 2 (the body is 189 B in every copy, TRACED by the bytecode gate 8 / 8; Maglev is expected not to inline
+  it (189 B >= its 100 B cap; untraced); TurboFan does (inline pin)). Fix: TwoSum tail plus a `p * 0.5 + q * 0.5 !==
+  -Infinity` overflow term in scripts/bisect.template.js (AU-R1a); the oracle decides with BigInt; an exact-reference
+  fuzz with a floor of false rounded ties >= 1000 on F64 / F32 / I32 (an oracle fix alone has no teeth).
+- **Lesson (AU-R1a):** the first fix (AU-R1, 167 B body) returned 0 on F64 `[-Infinity, 1e308]` x = -1e308 (exact 1:
+  both rounded distances overflow). helper-B's independent exact test found it; the cross-checker's claim "both
+  distances cannot overflow at once" was false.
+- **Gate:** `npm test` (oracle, boundary, exact fuzz). Reopens with: a rounded-tie answer that differs from the exact
+  reference, or an oracle that shares an expression with a kernel.
+
+### B9. The torture's steady minor GCs were published and never gated *(FOUND 2026-11-11, final audit; REOPENS B4 / P1-R10 via AU-R5 "Reopen B4: minor 0 + pin (Recommended)", AU-R5a "Accept the flag (Recommended)")*
+- **What happened:** the torture printed a minor-GC count per steady lane and no verdict held it; with no allocation
+  gate in `npm test` or CI, a 16 B/op plant (`globalThis.__bisectBox = x + 0.5;` in upperBoundBranchyF64, 16.03 B/op)
+  passed the torture unpinned (cross-opus: a 16 B/op plant passes at the default semi-space).
+- **Root cause:** a measured channel with no threshold (the B4 shape again); short-lived allocation moves minor GCs
+  only.
+- **Evidence:** audit/2026-11-11-bisect/cross-opus/CROSS.md (17 / 17 audited runs minor = 0; pinned 1 MB: the plant
+  trips); host macOS arm64, node v26.8.2, load1 1.3 .. 2.6 as stated there.
+- **Law:** 9. Fix: steady `{ maxMajor: 0, maxMinor: 0 }`; `npm run torture` passes --no-concurrent-recompilation
+  --min-semi-space-size=1 --max-semi-space-size=1 (AU-R5a "Accept the flag (Recommended)": without the tier flag the
+  clean build failed under load, 16 / 16 parallel runs exit 1, minor 1..8, concurrent TurboFan left lanes un-inlined;
+  NO VERDICT still checks only the two semi-space flags); torture.mjs prints `torture: NO VERDICT` and exits 2 without
+  both flags; a must-fail 16 B/op plant (and a `{ x }` plant) exits 1; the audited build must exit 0.
+- **Gate:** `npm run torture`. Reopens with: a pinned run with minor > 0 on an unchanged kernel (a test bug), or an
+  allocation gate in `npm test` that makes this redundant.
+- **Flag tricks (AU-R5b "Class 3, one-line refusal (Recommended)"):** review round 2 found two hand-typed V8
+  flag tricks that let a 16 B/op plant pass: a one-dash `-max-semi-space-size=16` after the pin, and `--minor-ms`
+  (V8 then reports young GCs as kind 2, which lite-gc-profiler does not count as minor). Class 3; the pin check
+  refuses both (NO VERDICT, exit 2), each with a control row. Upstream lead for LiteGcProfiler: classify kind 2.
+
+### B10. The doc gates ran no llms.txt snippets, tiered no d.ts speed word and checked no cited file *(FOUND 2026-11-11, final audit; RULED AU-R4 / AU-R6 / AU-R7; FIXED)*
+- **What happened:** (1) llms.txt Usage carried bare `// 1` result comments no gate ran. (2) Bisect.d.ts said "slower
+  on incoherent streams" five times with no tier (a speed claim outside the tier law). (3) README / llms.txt cite
+  LEDGER ids and RESEARCH.md, which are not in the npm tarball.
+- **Root cause:** the docs gate covered README snippets, one sentence and a token list; each other claim had no row.
+- **Evidence:** audit/2026-11-11-bisect/reviewer-*/REVIEW.md, cross-*/CROSS.md; macOS arm64, node v26.8.2.
+- **Law:** 9, and the verification tiers (an untiered claim is unproven). Rulings: AU-R4 "Class 2, fix now
+  (Recommended)"; AU-R6 "Pointer sentence + docs row (Recommended)"; AU-R7 "Tiered warning (Recommended)". The d.ts
+  text and the pointer sentence are in Bisect.d.ts and README.
+- **Gate:** test/Bisect.docs.test.mjs rows bare / cite / speed and the llms.txt snippet row, each with planted
+  controls through docsProblems (B7). Reopens with: a doc claim in a file no row loops over.
+
 ---
 
 ## C. Measurement lessons (this package's own runs)
@@ -469,6 +519,23 @@ on these kernels. No single green gate authorises a release.
   one quantum (max 0.78 vs 1.0), fail-closed but may read NO VERDICT / FAIL on a loaded host.
 - **Gate:** `npm run gates:local`. Reopens with: a V8 change to Maglev inlining flags, or an empty lane > 1.0 on a
   quiet host.
+
+### C9. The NaN-hint box is made by the CALLER, not the kernel *(MEASURED 2026-11-11, final audit D4; RULED AU-R2 "Class 2, release-blocking (Recommended)", AU-R3 "Caller-box wording (Recommended)"; refines C2)*
+- **What happened:** the old sentence said the QUERY boxes. cross-fable's probe (real kernel vs a stub): a NaN hint
+  read from a Float64Array reads 16.03 B/op for the audited kernel and for the 0-parameter stub alike; the literal NaN
+  reads 0.03. cross-opus: a local 5-parameter callee that never reads h boxes 16.02 B/op. So the box is the caller's
+  argument materialisation across a call V8 does not inline, not the kernel's body.
+- **Root cause:** a double passed as an argument across a real call is a HeapNumber (C2, I8); NaN read from a typed
+  array is not a Smi, and lo / hi (-0) and the hint are arguments too. The old sentence named the query only.
+- **Evidence:** audit/2026-11-11-bisect/cross-fable/CROSS.md and cross-repro.mjs (`--d4`, lanes smiq_nan_from_f64
+  16.03 vs smiq_nan_literal 0.03 B/op; flags in its header), cross-opus/CROSS.md (2 runs, load1 2.58); host macOS
+  arm64, node v26.8.2.
+- **Law:** 8. Fix: the AU-R3 sentence in Bisect.js / Bisect.d.ts / README / llms.txt / the docs test QBOX literal (one
+  line, character-identical), README "Known limits", and alloc lanes lowerBoundHint<T>.nanhint (must read one box,
+  14.0..18.0 B/op in run B) and .nanlit (<= 1.0 B/op in both runs).
+- **Gate:** the docs Q-BOX row (DETERMINISTIC) and `npm run gates:local` lanes. Reopens with: a V8 that passes a
+  double unboxed across a non-inlined call.
+
 ---
 
 ## D. Process lessons

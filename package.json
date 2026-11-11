@@ -28,7 +28,7 @@
     "gen": "node scripts/gen.mjs",
     "gen:check": "node scripts/gen.mjs --check",
     "test": "node --test \"test/*.test.mjs\"",
-    "torture": "node --expose-gc test/torture.mjs",
+    "torture": "node --expose-gc --no-concurrent-recompilation --min-semi-space-size=1 --max-semi-space-size=1 test/torture.mjs",
     "gates": "node --test test/gates/alloc.test.mjs test/gates/bytecode.test.mjs",
     "gates:local": "LITE_UTILS_DIR=../LiteUtils npm run gates",
     "test:types": "node --test test/types.test.mjs test/types.exports.test.mjs",

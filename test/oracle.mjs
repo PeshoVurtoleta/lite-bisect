@@ -60,7 +60,9 @@ export function naiveSegment(a, lo, hi, x) {
     return lo - 1;
 }
 // nearest: empty -> lo; NaN -> lo; else the first i with a[i] === x; else L = last i with
-// a[i] < x, U = first i with a[i] > x; no L -> U; no U -> L; else x - a[L] <= a[U] - x ? L : U.
+// a[i] < x, U = first i with a[i] > x; no L -> U; no U -> L; else x - a[L] <= a[U] - x decided in
+// EXACT arithmetic (exactLeq below), a tie -> L. Never the rounded double expression (R-ORACLE): it
+// rounds both distances and calls a false tie for L (e.g. [-3, 4], x = 0.5000000000000001 -> 1).
 export function naiveNearest(a, lo, hi, x) {
     if (hi === lo) return lo;
     if (x !== x) return lo;
@@ -70,7 +72,32 @@ export function naiveNearest(a, lo, hi, x) {
     for (let i = lo; i < hi; i++) if (a[i] > x) { U = i; hasU = true; break; }
     if (!hasL) return U;
     if (!hasU) return L;
-    return x - a[L] <= a[U] - x ? L : U;
+    return exactLeq(a[L], x, a[U]) ? L : U;
+}
+
+// ---- exact arithmetic (R-ORACLE) ----------------------------------------------------------
+// exactUnits(v): a finite double v as a BigInt count of 2^-1074 (every finite double is an
+// integer multiple of the smallest subnormal), read from its IEEE-754 bits. A non-finite v
+// throws (fail closed: an infinity has no unit count).
+const BITS_F = new Float64Array(1);
+const BITS_U = new BigUint64Array(BITS_F.buffer);
+export function exactUnits(v) {
+    if (!Number.isFinite(v)) throw new RangeError('exactUnits: non-finite ' + v);
+    BITS_F[0] = v;
+    const bits = BITS_U[0];
+    const biased = Number((bits >> 52n) & 0x7ffn);
+    let m = bits & 0xfffffffffffffn;
+    if (biased !== 0) m = (m | 0x10000000000000n) << BigInt(biased - 1);   // normal: (2^52 + f) * 2^(e - 1)
+    return bits >> 63n ? -m : m;                                            // subnormal: f units as is
+}
+// exactLeq(p, x, q) for p < x < q: true when x - p <= q - x exactly. x is finite here (p < x < q
+// leaves no room for an infinite x). Infinities by case: an infinite distance loses to a finite
+// one; two infinite distances ([-Infinity, Infinity]) are a tie -> true (the lower index).
+export function exactLeq(p, x, q) {
+    const infP = p === -Infinity, infQ = q === Infinity;
+    if (infP || infQ) return infQ;
+    const X = exactUnits(x);
+    return X - exactUnits(p) <= exactUnits(q) - X;
 }
 
 // ---- generators -------------------------------------------------------------------------
@@ -123,6 +150,52 @@ export function genQueries(T, a) {
     }
     return q;
 }
+// ---- rounded-tie generator (R-NEAREST / R-ORACLE) ---------------------------------------
+// The rounds above never reach a ROUNDED tie (x - p === q - x in doubles while the exact distances
+// differ), so a nearest that decides ties by the rounded expression passes them. This phase draws
+// sorted pairs [p, q] of type T over wide magnitudes and queries the midpoint p / 2 + q / 2 moved
+// by -4..4 ulps plus one uniform point in (p, q). runOracle counts the false rounded ties it hit.
+const UF = new Float64Array(1);
+const UI = new BigInt64Array(UF.buffer);
+const MAG = 0x7fffffffffffffffn;
+// v moved k ulps along the number line (finite v; -0 is treated as +0).
+export function ulpMove(v, k) {
+    UF[0] = v;
+    const ord = (UI[0] < 0n ? -(UI[0] & MAG) : UI[0]) + BigInt(k);
+    UI[0] = ord < 0n ? (-ord) | (1n << 63n) : ord;
+    return UF[0];
+}
+function tieValue(T, rnd) {
+    if (T === 'F64' || T === 'F32') {
+        const m = rnd() + rnd() / 4294967296;                     // ~53 random bits in [0, 1)
+        const v = (rnd() < 0.5 ? -m : m) * 2 ** (((rnd() * 121) | 0) - 60);
+        return T === 'F32' ? Math.fround(v) : v;
+    }
+    const wide = rnd() < 0.34;
+    if (T === 'I32') return wide ? ((rnd() * 4294967296) | 0) : ((rnd() * 2001) | 0) - 1000;
+    if (T === 'U32') return wide ? Math.floor(rnd() * 4294967296) : (rnd() * 2001) | 0;
+    return wide ? (rnd() * 65536) | 0 : (rnd() * 2001) | 0;    // U16
+}
+export function genTieCases(T, rnd, draws) {
+    const out = [];
+    for (let d = 0; d < draws; d++) {
+        const u = tieValue(T, rnd), v = tieValue(T, rnd);
+        const a = new TYPES[T](2);
+        a[0] = u < v ? u : v; a[1] = u < v ? v : u;
+        if (!(a[0] < a[1])) continue;
+        const p = a[0], q = a[1], mid = p / 2 + q / 2;
+        for (let k = -4; k <= 4; k++) out.push(a, ulpMove(mid, k));
+        out.push(a, p + (q - p) * rnd());
+    }
+    return out;
+}
+// A false rounded tie: p < x < q, the rounded distances are equal, the exact ones are not.
+export function isRoundedTie(p, x, q) {
+    if (!(p < x && x < q) || x - p !== q - x || p === -Infinity || q === Infinity) return false;
+    const X = exactUnits(x);
+    return X - exactUnits(p) !== exactUnits(q) - X;
+}
+
 // Ranges: every [lo, hi) for n <= 24; else [0, n] plus 20 random sub-ranges.
 export function genRanges(rnd, n) {
     const r = [];
@@ -163,8 +236,9 @@ export function census(keys) {
 // definitions. Rounds 0..69: n = round (every sub-range for n <= 24, [0, n] + 20 random
 // above); then `bigRounds` rounds with n = 1 + rnd() * 300. Hints per (range, x), the
 // draft-check list: lo, hi, lo - 3, hi + 3, NaN, a random h in [lo, hi], the oracle answer.
-// Returns { checks, fails, msgs, perName } -- a function in `mod` that ran 0 checks shows up
-// in perName with 0 and the caller fails it.
+// Then, when `mod` has a nearest kernel, the rounded-tie phase (genTieCases, opts.tieDraws pairs).
+// Returns { checks, fails, msgs, perName, roundedTies } -- a function in `mod` that ran 0 checks
+// shows up in perName with 0 and the caller fails it; roundedTies counts the false rounded ties hit.
 export function runOracle(mod, T, seed, opts = {}) {
     const smallRounds = opts.smallRounds ?? 70;
     const bigRounds = opts.bigRounds ?? 0;
@@ -240,7 +314,22 @@ export function runOracle(mod, T, seed, opts = {}) {
             }
         }
     }
-    return { checks, fails, msgs, perName };
+    // Rounded-tie phase (nearest kernels only; it draws from rnd AFTER the rounds above, so their
+    // stream is unchanged). opts.tieDraws pairs, 10 queries each, over [0, 2) of the pair.
+    let roundedTies = 0;
+    if (nears.length > 0) {
+        const tc = genTieCases(T, rnd, opts.tieDraws ?? 4000);
+        for (let c = 0; c < tc.length; c += 2) {
+            const a = tc[c], x = tc[c + 1];
+            if (isRoundedTie(a[0], x, a[1])) roundedTies++;
+            const wn = naiveNearest(a, 0, 2, x);
+            for (let k = 0; k < nears.length; k++) {
+                const got = nears[k][1](a, 0, 2, x); checks++; perName[nears[k][0]]++;
+                if (got !== wn) bad(nears[k][0], got, wn, 2, 0, 2, x);
+            }
+        }
+    }
+    return { checks, fails, msgs, perName, roundedTies };
 }
 
 // ---- golden replay (test/fixtures/golden-f64.json "stream", implemented from its text) ---

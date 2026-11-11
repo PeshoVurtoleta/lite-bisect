@@ -13,7 +13,7 @@
  *   x         a NaN query compares false everywhere: every lower / upper / hint kernel returns lo,
  *             segment returns lo - 1, nearest returns lo.
  *
- * Allocation: zero allocation where the kernel inlines into its caller, or the query is a Smi; a non-Smi number query passed across a call V8 does not inline boxes one 16 B HeapNumber.
+ * Allocation: zero allocation where the kernel inlines into its caller, or every number argument (the query; the hint of lowerBoundHint*; lo / hi) is a Smi; a non-Smi number computed at run time or read from a typed array (a fractional query, a NaN hint read from a Float64Array, -0 for lo / hi) and passed across a call V8 does not inline is boxed by the caller: one 16 B HeapNumber per call on Node. For no hint pass lo or the literal NaN: neither boxes.
  *
  * MIT (c) Zahary Shinikchiev <shinikchiev@yahoo.com>
  *
@@ -45,7 +45,7 @@ export function upperBoundBranchyF64(a: Float64Array, lo: number, hi: number, x:
 
 /**
  * lower bound galloping out from the hint h: the first i in [lo, hi) with a[i] >= x, else hi. NaN x -> lo.
- * For coherent streams only (each h near its answer, e.g. the previous result); slower on incoherent streams.
+ * For coherent streams only (each h near its answer, e.g. the previous result); on incoherent streams it can be slower than lowerBoundBranchless* (PRELIMINARY, one CPU; no timing lane gated).
  * h is an integer index or NaN (NaN -> lo; outside [lo, hi] clamped). A non-integer h is a caller error
  * that may return a wrong index or never return.
  */
@@ -86,7 +86,7 @@ export function upperBoundBranchyF32(a: Float32Array, lo: number, hi: number, x:
 
 /**
  * lower bound galloping out from the hint h: the first i in [lo, hi) with a[i] >= x, else hi. NaN x -> lo.
- * For coherent streams only (each h near its answer, e.g. the previous result); slower on incoherent streams.
+ * For coherent streams only (each h near its answer, e.g. the previous result); on incoherent streams it can be slower than lowerBoundBranchless* (PRELIMINARY, one CPU; no timing lane gated).
  * h is an integer index or NaN (NaN -> lo; outside [lo, hi] clamped). A non-integer h is a caller error
  * that may return a wrong index or never return.
  */
@@ -127,7 +127,7 @@ export function upperBoundBranchyU32(a: Uint32Array, lo: number, hi: number, x: 
 
 /**
  * lower bound galloping out from the hint h: the first i in [lo, hi) with a[i] >= x, else hi. NaN x -> lo.
- * For coherent streams only (each h near its answer, e.g. the previous result); slower on incoherent streams.
+ * For coherent streams only (each h near its answer, e.g. the previous result); on incoherent streams it can be slower than lowerBoundBranchless* (PRELIMINARY, one CPU; no timing lane gated).
  * h is an integer index or NaN (NaN -> lo; outside [lo, hi] clamped). A non-integer h is a caller error
  * that may return a wrong index or never return.
  */
@@ -168,7 +168,7 @@ export function upperBoundBranchyU16(a: Uint16Array, lo: number, hi: number, x: 
 
 /**
  * lower bound galloping out from the hint h: the first i in [lo, hi) with a[i] >= x, else hi. NaN x -> lo.
- * For coherent streams only (each h near its answer, e.g. the previous result); slower on incoherent streams.
+ * For coherent streams only (each h near its answer, e.g. the previous result); on incoherent streams it can be slower than lowerBoundBranchless* (PRELIMINARY, one CPU; no timing lane gated).
  * h is an integer index or NaN (NaN -> lo; outside [lo, hi] clamped). A non-integer h is a caller error
  * that may return a wrong index or never return.
  */
@@ -209,7 +209,7 @@ export function upperBoundBranchyI32(a: Int32Array, lo: number, hi: number, x: n
 
 /**
  * lower bound galloping out from the hint h: the first i in [lo, hi) with a[i] >= x, else hi. NaN x -> lo.
- * For coherent streams only (each h near its answer, e.g. the previous result); slower on incoherent streams.
+ * For coherent streams only (each h near its answer, e.g. the previous result); on incoherent streams it can be slower than lowerBoundBranchless* (PRELIMINARY, one CPU; no timing lane gated).
  * h is an integer index or NaN (NaN -> lo; outside [lo, hi] clamped). A non-integer h is a caller error
  * that may return a wrong index or never return.
  */

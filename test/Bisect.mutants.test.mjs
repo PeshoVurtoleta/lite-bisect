@@ -78,9 +78,14 @@ test('mutants.json: every kernel x type has >= 1 row; ids unique; no inert row',
     for (const k of KERNELS) for (const T of TYPES) assert.ok(fns.has(k + T), 'no mutant row for ' + k + T);
     assert.equal(new Set(SPEC.rows.map((r) => r.id)).size, SPEC.rows.length);
     for (const r of SPEC.rows) assert.notEqual(r.find, r.replace, r.id + ' is inert');
-    // Same rows for every type (one per kernel per compare, x every oracle type).
-    const perType = TYPES.map((T) => SPEC.rows.filter((r) => r.fn.endsWith(T)).length);
+    // Same rows for every type (one per kernel per compare, x every oracle type), apart from
+    // nearest.rounded-tie.*: F64 / F32 / I32 only (on U32 / U16 no rounded tie exists, so the
+    // reverted tie-break is an equivalent mutant there and would SURVIVE).
+    const RT = 'nearest.rounded-tie.';
+    const perType = TYPES.map((T) => SPEC.rows.filter((r) => r.fn.endsWith(T) && !r.id.startsWith(RT)).length);
     assert.ok(perType.every((n) => n === perType[0] && n > 0), 'rows per type ' + perType.join('/'));
+    assert.deepEqual(SPEC.rows.filter((r) => r.id.startsWith(RT)).map((r) => r.fn).sort(), ['nearestF32', 'nearestF64', 'nearestI32']);
+    assert.equal(SPEC.rows.length, perType[0] * TYPES.length + 3);
 });
 
 test('live: every row KILLED (killed === rows), every unmutated control PASS', async () => {

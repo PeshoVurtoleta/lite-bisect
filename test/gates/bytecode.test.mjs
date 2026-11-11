@@ -4,10 +4,11 @@
 // NO-VERDICT on any other node, and this file fails with NO VERDICT before spawning it (SPEC-p1 R6).
 // Every maximum comes from test/gates/expect.json (U5's table, typed from SPEC-p1 section 1 and the U2
 // one-shot report), never from Bisect.js (LEDGER law 9): `==` rows pass --max <bytes> to the tool AND must
-// read exactly <bytes> here; `<` rows (segment, nearest: Maglev's 100 B single-inline cap) pass
-// --max <bytes - 1>. The table itself is checked against SPEC-p1 section 1 typed below. A row passes only
-// if the tool exits 0 with VERDICT WITHIN, its fn has exactly 1 match, and the length meets the row; a
-// kernel passes only if its 5 per-type copies read the same length (SPEC-p1 section 1).
+// read exactly <bytes> here; `<` rows (segment: Maglev's 100 B single-inline cap) pass --max <bytes - 1>;
+// nearest is an `==` row since AU-R1a (189 B, TurboFan-only inlining). The table itself is checked
+// against SPEC-p1 section 1 typed below. A row passes only if the tool exits 0 with VERDICT WITHIN,
+// its fn has exactly 1 match, and the length meets the row; a kernel passes only if its 5 per-type
+// copies read the same length (SPEC-p1 section 1).
 // Controls (scratch mutants of Bisect.js in a mktemp dir; the driver imports LITE_BISECT_MODULE):
 //   +1 B lowerBoundBranchlessF64 (104 B) FAILS (tool OVER, row, copies); segmentF64 padded to exactly
 //   100 B FAILS its < 100 row (closes the U5 nit: segment's budget is checked here); segmentF64 at 99 B
@@ -31,7 +32,7 @@ const TIMEOUT_MS = 900000;
 const SPEC = {
     lowerBoundBranchless: ['==', 103], upperBoundBranchless: ['==', 103],
     lowerBoundBranchy: ['==', 55], upperBoundBranchy: ['==', 55],
-    lowerBoundHint: ['==', 228], segment: ['<', 100], nearest: ['<', 100],
+    lowerBoundHint: ['==', 228], segment: ['<', 100], nearest: ['==', 189],
 };
 const TYPES = ['F64', 'F32', 'U32', 'U16', 'I32'];
 
@@ -147,7 +148,7 @@ test('table: expect.json rows == 7 kernels x 5 types and match SPEC-p1 section 1
 });
 
 let BASE = null;
-test('assertion 9 bytecode: branchless == 103, branchy == 55 (< 100), hint == 228, segment / nearest < 100, 5 copies equal', () => {
+test('assertion 9 bytecode: branchless == 103, branchy == 55 (< 100), hint == 228, segment < 100, nearest == 189 (AU-R1a), 5 copies equal', () => {
     need();
     const r = runBudget(EXPECT.rows);
     BASE = { ...check(EXPECT.rows, r.status, r.stdout + r.stderr), text: r.stdout };

@@ -19,7 +19,12 @@
 //               literal token text NOT preceded by [0-9.] and NOT followed by [0-9] or by "." + [0-9].
 //               So "2.4" hits "x 2.4 ns" and "2.4," but not "12.4", "2.45" or "2.4.1".
 //   ascii       0 code points above U+007F in all five, except U+00D7 and U+00B5.
-//   snippets    every ```js block of README.md runs (one node process, a mkdtemp dir, bounded); the import
+//   bare        (AU-R4) README.md / llms.txt: no js-fence line carries a bare `// <number>` result comment (the
+//               checked form is `// -> <literal>`).
+//   cite        (AU-R6) every `<NAME>.md` cited in README.md / llms.txt / CHANGELOG.md / Bisect.d.ts is in
+//               package.json files[], or that file holds the pointer sentence (PTR below).
+//   speed       (AU-R7) Bisect.d.ts: a sentence with "slower" / "faster" holds PRELIMINARY, STATISTICAL or REPORTED.
+//   snippets    every ```js block of README.md and llms.txt runs (one node process, a mkdtemp dir, bounded); the import
 //               specifier "@zakkster/lite-bisect" is mapped to this package's Bisect.js. A CHECKED LINE is
 //               one line `<stmt>; // -> <literal>` where <stmt> is `const|let|var <name> = <expr>` or an
 //               expression, and <literal> is a number (also -0, NaN, Infinity, -Infinity), true, false,
@@ -43,7 +48,11 @@ const DOCS = ['README.md', 'llms.txt', 'CHANGELOG.md', 'Bisect.d.ts', 'Bisect.js
 const QBOX_FILES = ['README.md', 'llms.txt', 'Bisect.d.ts', 'Bisect.js'];
 const NAME_FILES = ['README.md', 'llms.txt'];
 const TOKEN_FILES = ['README.md', 'llms.txt', 'CHANGELOG.md'];
-const QBOX = 'zero allocation where the kernel inlines into its caller, or the query is a Smi; a non-Smi number query passed across a call V8 does not inline boxes one 16 B HeapNumber.';
+const QBOX = 'zero allocation where the kernel inlines into its caller, or every number argument (the query; the hint of lowerBoundHint*; lo / hi) is a Smi; a non-Smi number computed at run time or read from a typed array (a fractional query, a NaN hint read from a Float64Array, -0 for lo / hi) and passed across a call V8 does not inline is boxed by the caller: one 16 B HeapNumber per call on Node. For no hint pass lo or the literal NaN: neither boxes.';
+const BARE_FILES = ['README.md', 'llms.txt'];
+const CITE_FILES = ['README.md', 'llms.txt', 'CHANGELOG.md', 'Bisect.d.ts'];
+const SPEED_FILES = ['Bisect.d.ts'];
+const PTR = 'LEDGER and RESEARCH ids refer to LEDGER.md and RESEARCH.md in the source repository; they are not in the npm tarball.';
 const TOKENS = ['2.4', '3.4x', '0.614', '0.436', '1.640', '3.325', '1.088', '1.255', '4,096'];
 const SPAWN_MS = 120000;
 const MOD = await import(pathToFileURL(BISECT).href);
@@ -72,6 +81,33 @@ function hasQboxLine(text) {
 
 function neverInlineHits(text) {
     return (text.match(/never\s+inlin/gi) || []).length;
+}
+
+// A js-fence line whose comment starts with a number (a result written as `// 3`).
+function bareResultHits(md) {
+    const hits = [];
+    let inJs = false;
+    let n = 0;
+    for (const l of md.split('\n')) {
+        n++;
+        if (!inJs) { if (/^```js\s*$/.test(l)) inJs = true; }
+        else if (/^```\s*$/.test(l)) inJs = false;
+        else if (/\/\/\s*[-+]?(\d|NaN\b|Infinity\b)/.test(l)) hits.push('line ' + n);
+    }
+    return hits;
+}
+
+function citedMd(text) {
+    return [...new Set(text.match(/(?<![A-Za-z0-9_./-])[A-Za-z0-9_-]+\.md(?![A-Za-z0-9_])/g) || [])];
+}
+
+function uncitable(text, shipped) {
+    return text.includes(PTR) ? [] : citedMd(text).filter((n) => !shipped.includes(n));
+}
+
+function speedHits(text) {
+    const flat = text.split('\n').map((l) => l.replace(/^\s*(\/\*\*|\*\/|\*)\s?/, '')).join(' ');
+    return flat.split(/\.\s+/).filter((x) => /\b(slower|faster)\b/i.test(x) && !/PRELIMINARY|STATISTICAL|REPORTED/.test(x)).map((x) => x.trim().slice(0, 60));
 }
 
 function isDigit(c) { return c >= '0' && c <= '9'; }
@@ -120,6 +156,13 @@ function docsProblems(texts) {
     each('never', DOCS, (s) => { const n = neverInlineHits(s); return n ? n + ' "never inline" hit(s)' : ''; });
     each('tokens', TOKEN_FILES, (s) => { const h = bannedTokenHits(s); return h.length ? 'banned ' + h.join(', ') : ''; });
     each('ascii', DOCS, (s) => { const h = nonAsciiHits(s); return h.length ? 'non-ASCII ' + h.join(', ') : ''; });
+    each('bare', BARE_FILES, (s) => { const h = bareResultHits(s); return h.length ? 'bare // <number> result comment at ' + h.join(', ') : ''; });
+    if (!texts.has('package.json')) out.push('cite package.json: missing package.json');
+    else {
+        const shipped = JSON.parse(texts.get('package.json')).files;
+        each('cite', CITE_FILES, (s) => { const h = uncitable(s, shipped); return h.length ? 'cites unshipped ' + h.join(', ') + ' without the pointer sentence' : ''; });
+    }
+    each('speed', SPEED_FILES, (s) => { const h = speedHits(s); return h.length ? 'untiered speed word: ' + h.join(' | ') : ''; });
     return out;
 }
 
@@ -229,7 +272,7 @@ function runSnippets(md, bisectPath) {
 
 // ---- real rows (U8 / U9 run them; U7 runs only the controls) -------------------------------------
 
-const live = loadDocs(ROOT, DOCS);
+const live = loadDocs(ROOT, DOCS.concat('package.json'));
 const textOf = (f) => { assert.ok(live.texts.has(f), f + ' missing (a FAIL, never a skip)'); return live.texts.get(f); };
 const LIVE = docsProblems(live.texts);
 const slice = (check) => LIVE.filter((p) => p.startsWith(check + ' '));
@@ -258,6 +301,25 @@ test('docs: non-ASCII 0 in all five files (U+00D7, U+00B5 excepted)', () => {
     assert.deepEqual(slice('ascii'), []);
 });
 
+test('docs: no bare `// <number>` result comment in a README / llms.txt js fence (AU-R4)', () => {
+    assert.deepEqual(slice('bare'), []);
+});
+
+test('docs: every cited <NAME>.md is in package.json files[] or the file holds the pointer sentence (AU-R6)', () => {
+    assert.deepEqual(slice('cite'), []);
+});
+
+test('docs: Bisect.d.ts "slower" / "faster" sentences carry PRELIMINARY / STATISTICAL / REPORTED (AU-R7)', () => {
+    assert.deepEqual(slice('speed'), []);
+});
+
+test('docs: llms.txt ```js snippets run, every `// ->` matches (k / k, k > 0)', (t) => {
+    const r = runSnippets(textOf('llms.txt'), BISECT);
+    t.diagnostic('snippet checks ' + r.matched + ' / ' + r.total + ' (ran ' + r.ran + ')');
+    assert.deepEqual(r.problems, []);
+    assert.ok(r.total > 0 && r.matched === r.total && r.ran === r.total);
+});
+
 test('docs: README ```js snippets run, every `// ->` matches (k / k, k > 0)', (t) => {
     const r = runSnippets(textOf('README.md'), BISECT);
     t.diagnostic('snippet checks ' + r.matched + ' / ' + r.total + ' (ran ' + r.ran + ')');
@@ -268,9 +330,10 @@ test('docs: README ```js snippets run, every `// ->` matches (k / k, k > 0)', (t
 // ---- controls: in-memory input through the same functions ----------------------------------------
 
 // The file lists copied from SPEC assertion 12, NOT the constants docsProblems loops over (law 9).
-const SPEC_FILES = { names: ['README.md', 'llms.txt'], qbox: ['README.md', 'llms.txt', 'Bisect.d.ts', 'Bisect.js'], tokens: ['README.md', 'llms.txt', 'CHANGELOG.md'], never: ['README.md', 'llms.txt', 'CHANGELOG.md', 'Bisect.d.ts', 'Bisect.js'], ascii: ['README.md', 'llms.txt', 'CHANGELOG.md', 'Bisect.d.ts', 'Bisect.js'] };
+const SPEC_FILES = { names: ['README.md', 'llms.txt'], qbox: ['README.md', 'llms.txt', 'Bisect.d.ts', 'Bisect.js'], tokens: ['README.md', 'llms.txt', 'CHANGELOG.md'], never: ['README.md', 'llms.txt', 'CHANGELOG.md', 'Bisect.d.ts', 'Bisect.js'], ascii: ['README.md', 'llms.txt', 'CHANGELOG.md', 'Bisect.d.ts', 'Bisect.js'], bare: ['README.md', 'llms.txt'], cite: ['README.md', 'llms.txt', 'CHANGELOG.md', 'Bisect.d.ts'], speed: ['Bisect.d.ts'] };
+const SHIPPED = JSON.stringify({ files: ['Bisect.js', 'Bisect.d.ts', 'llms.txt', 'LICENSE.txt', 'CHANGELOG.md', 'README.md'] });
 const CLEAN = NAMES.join(' ') + '\n' + QBOX + '\n';
-const cleanMap = () => new Map(SPEC_FILES.never.map((f) => [f, CLEAN]));
+const cleanMap = () => new Map(SPEC_FILES.never.map((f) => [f, CLEAN]).concat([['package.json', SHIPPED]]));
 const QCUT = QBOX.indexOf(' a non-Smi');
 const PLANTS = [
     { check: 'names', files: SPEC_FILES.names, plant: (s) => { assert.equal(s.split('nearestI32').length, 2); return s.replace('nearestI32', ''); } },
@@ -278,6 +341,9 @@ const PLANTS = [
     { check: 'never', files: SPEC_FILES.never, plant: (s) => s + 'never inline\n' },
     { check: 'tokens', files: SPEC_FILES.tokens, plant: (s) => s + ' 2.4 \n' },
     { check: 'ascii', files: SPEC_FILES.ascii, plant: (s) => s + '\u00e9\n' },
+    { check: 'bare', files: SPEC_FILES.bare, plant: (s) => s + '\n```js\nconst x = f(1); // 3\n```\n' },
+    { check: 'cite', files: SPEC_FILES.cite, plant: (s) => s + '\nsee ROADMAP.md\n' },
+    { check: 'speed', files: SPEC_FILES.speed, plant: (s) => s + '\n * It is faster on small arrays.\n' },
 ];
 
 test('control: docsProblems -- a clean in-memory set has 0 problems', () => {
@@ -287,7 +353,7 @@ test('control: docsProblems -- a clean in-memory set has 0 problems', () => {
 test('control: docsProblems -- a file left out is missing in every check that lists it', () => {
     const m = cleanMap();
     m.delete('README.md');
-    assert.deepEqual(docsProblems(m), ['exists', 'names', 'qbox', 'never', 'tokens', 'ascii'].map((c) => c + ' README.md: missing README.md'));
+    assert.deepEqual(docsProblems(m), ['exists', 'names', 'qbox', 'never', 'tokens', 'ascii', 'bare', 'cite'].map((c) => c + ' README.md: missing README.md'));
 });
 
 let plantCases = 0;
@@ -304,8 +370,8 @@ for (const p of PLANTS) {
     }
 }
 
-test('control: docsProblems -- 19 planted (check, file) cases', () => {
-    assert.equal(plantCases, 19);
+test('control: docsProblems -- 26 planted (check, file) cases', () => {
+    assert.equal(plantCases, 26);
 });
 
 test('control: a missing doc file is reported missing', () => {
@@ -393,4 +459,24 @@ test('control: snippets -- a malformed marker (`//-> 0`, `// ->0`) fails, never 
 test('control: snippets -- `throws` on a call that returns fails', () => {
     const r = runSnippets(fence(IMPORT + 'assertRange(a, 0, 2); // -> throws RangeError'), BISECT);
     assert.ok(r.problems.some((p) => p.includes('got undefined')), JSON.stringify(r.problems));
+});
+
+test('control: cite -- a cited unshipped .md passes only with the pointer sentence; a shipped one always passes', () => {
+    const shipped = JSON.parse(SHIPPED).files;
+    assert.deepEqual(uncitable('see ROADMAP.md', shipped), ['ROADMAP.md']);
+    assert.deepEqual(uncitable('see ROADMAP.md\n' + PTR, shipped), []);
+    assert.deepEqual(uncitable('see README.md and CHANGELOG.md', shipped), []);
+    const m = cleanMap();
+    m.set('llms.txt', CLEAN + 'see ROADMAP.md\n' + PTR + '\n');
+    assert.deepEqual(docsProblems(m), []);
+});
+
+test('control: bare -- a result comment inside a js fence hits, a checked or prose line does not', () => {
+    assert.equal(bareResultHits('```js\nf(); // -> 3\nf(); // 3\n```').length, 1);
+    assert.equal(bareResultHits('```js\nf(); // cold, once\n```\nprose // 3').length, 0);
+});
+
+test('control: speed -- "slower" without a tier word hits, with one does not', () => {
+    assert.equal(speedHits(' * It can be slower than x.').length, 1);
+    assert.equal(speedHits(' * It can be slower than x (PRELIMINARY, one CPU).').length, 0);
 });

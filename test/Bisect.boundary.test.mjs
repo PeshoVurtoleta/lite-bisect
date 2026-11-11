@@ -143,6 +143,42 @@ test('boundary table: every kernel x type, a stated outcome per row', () => {
     assert.ok(rows > 0);
 });
 
+// ---- R-NEAREST (audit 2026-11-11, AU-R1): rounded ties decided exactly ---------------------------
+// The rounded x - a[L] vs a[U] - x is a false tie on every `want 1` row (the exact distance to a[U]
+// is smaller), so the pre-fix kernel answers 0 there. The `unchanged` rows must keep their answer.
+// [types, values, lo, hi, x, W(lower, upper, segment, nearest), label]
+const NEAREST_ROWS = [
+    [SIGNED, [-3, 4], 0, 2, 0.5000000000000001, W(1, 1, 0, 1), 'R-NEAREST want'],
+    [SIGNED, [-1, 1], 0, 2, 1e-17, W(1, 1, 0, 1), 'R-NEAREST want'],
+    [['F64'], [-(2 ** 53), 2 ** 53 + 4], 0, 2, 2.5, W(1, 1, 0, 1), 'R-NEAREST want'],
+    [['F64'], [-2, -1e-17], 0, 2, -1, W(1, 1, 0, 1), 'R-NEAREST want'],
+    // Both rounded distances are Infinity (x - -Infinity, and 1e308 - -1e308 overflows); the exact
+    // distance to 1e308 is finite (AU-R1a: the 167 B AU-R1 body answered 0 here).
+    [['F64'], [-Infinity, 1e308], 0, 2, -1e308, W(1, 1, 0, 1), 'R-NEAREST want'],
+    [['F64'], [-1e-300, 6], 0, 2, 3, W(1, 1, 0, 1), 'R-NEAREST want'],
+    [['I32'], [-2147483648, 2147483647], 0, 2, -0.4999999999999999, W(1, 1, 0, 1), 'R-NEAREST want'],
+    [['F32'], [-(2 ** 60), 2 ** 60 + 2 ** 38], 0, 2, 2 ** 37 + 1, W(1, 1, 0, 1), 'R-NEAREST want'],
+    [['F64'], [-Infinity, Infinity], 0, 2, 0, W(1, 1, 0, 0), 'R-NEAREST unchanged'],
+    [['F64'], [-Infinity, 5], 0, 2, 1, W(1, 1, 0, 1), 'R-NEAREST unchanged'],
+    [['F64'], [1, Infinity], 0, 2, 1e300, W(1, 1, 0, 0), 'R-NEAREST unchanged'],
+    [['F64'], [1, Infinity], 0, 2, Infinity, W(1, 2, 1, 1), 'R-NEAREST unchanged'],
+    [ALL, [1, 3], 0, 2, 2, W(1, 1, 0, 0), 'R-NEAREST unchanged true tie'],
+    [ALL, [1, 3, 3, 5, 8], 0, 5, 4, W(3, 3, 2, 2), 'R-NEAREST unchanged README'],
+];
+const runRow = ([types, values, lo, hi, x, want, label]) => {
+    for (const T of types) {
+        const a = TYPES[T].from(values);
+        for (let i = 0; i < values.length; i++) {
+            assert.ok(Object.is(a[i], values[i]), label + ' ' + T + ': value ' + values[i] + ' not stored exactly');
+        }
+        checkAll(T, a, lo, hi, x, want, label);
+    }
+};
+for (const row of NEAREST_ROWS) {
+    test(row[6] + ' ' + row[0].join('/') + ' [' + row[1].join(', ') + '] x=' + row[4] + ' -> nearest ' + row[5].nearest,
+        () => runRow(row));
+}
+
 test('assertion 3: segment / nearest rows verbatim', () => {
     const seg = fn('segmentF64'), near = fn('nearestF64');
     const s = Float64Array.of(1, 2, 2, 3);
@@ -256,12 +292,16 @@ const mono = budget((k) => {
 // Closed forms for a[i] = i on [lo, hi) (no scan, no kernel geometry).
 const cfLower = (lo, hi, x) => (x !== x ? lo : Math.min(hi, Math.max(lo, Math.ceil(x))));
 const cfUpper = (lo, hi, x) => (x !== x ? lo : Math.min(hi, Math.max(lo, Math.floor(x) + 1)));
+// nearest decided EXACTLY (R-ORACLE), never the kernel's rounded x - f <= f + 1 - x: x - f <= f + 1 - x
+// <=> 2x <= 2f + 1, and both sides are exact doubles here (2x is a power-of-two scaling, x < 2^32;
+// 2f + 1 is an integer below 2^53). The assert fails closed if a row ever leaves that range.
 const cfNearest = (lo, hi, x) => {
     if (hi === lo || x !== x || x <= lo) return lo;
     if (x >= hi - 1) return hi - 1;
     const f = Math.floor(x);
     if (f === x) return x;
-    return x - f <= f + 1 - x ? f : f + 1;
+    assert.ok(f >= 0 && 2 * f + 1 < 2 ** 53 && x < 2 ** 32, 'cfNearest: x = ' + x + ' outside the exact range');
+    return 2 * x <= 2 * f + 1 ? f : f + 1;
 };
 
 test('cap: every kernel incl. the hint returns the closed-form answer at hi - lo = 2^30 - 1', () => {

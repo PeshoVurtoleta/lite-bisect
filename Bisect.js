@@ -17,7 +17,7 @@
  *             equal values, the index next to x; an empty range -> lo, NaN -> lo.
  *   A NaN query compares false everywhere: every lower / upper / hint kernel returns lo.
  *
- * Allocation: zero allocation where the kernel inlines into its caller, or the query is a Smi; a non-Smi number query passed across a call V8 does not inline boxes one 16 B HeapNumber.
+ * Allocation: zero allocation where the kernel inlines into its caller, or every number argument (the query; the hint of lowerBoundHint*; lo / hi) is a Smi; a non-Smi number computed at run time or read from a typed array (a fractional query, a NaN hint read from a Float64Array, -0 for lo / hi) and passed across a call V8 does not inline is boxed by the caller: one 16 B HeapNumber per call on Node. For no hint pass lo or the literal NaN: neither boxes.
  *
  * The hot kernels trust the caller: no range check, no throw. A range outside the
  * contract may return a wrong index or never return. The cold checks assertRange(a, lo, hi) and
@@ -96,7 +96,14 @@ export function nearestF64(a, lo, hi, x) {
     const i = lowerBoundBranchlessF64(a, lo, hi, x);
     if (i === lo) return lo;
     if (i === hi) return hi - 1;
-    return x - a[i - 1] <= a[i] - x ? i - 1 : i;
+    const p = a[i - 1], q = a[i], d = x - p, u = q - x;
+    // Rounding is monotone: unequal doubles order the exact distances (a NaN u is an exact +Infinity match).
+    if (d !== u) return d < u ? i - 1 : i;
+    // Equal after rounding: compare the exact rounding errors of d and u (TwoSum; no allocation). They are
+    // NaN when d is Infinity (an infinite neighbour or one overflow): then only a -Infinity lower neighbour
+    // with a finite upper one is the farther of the two.
+    const s = d - x, t = u - q;
+    return i - ((!((x - (d - s)) - (p + s) > (q - (u - t)) - (x + t)) && p * 0.5 + q * 0.5 !== -Infinity) | 0);
 }
 
 export function lowerBoundBranchlessF32(a, lo, hi, x) {
@@ -168,7 +175,14 @@ export function nearestF32(a, lo, hi, x) {
     const i = lowerBoundBranchlessF32(a, lo, hi, x);
     if (i === lo) return lo;
     if (i === hi) return hi - 1;
-    return x - a[i - 1] <= a[i] - x ? i - 1 : i;
+    const p = a[i - 1], q = a[i], d = x - p, u = q - x;
+    // Rounding is monotone: unequal doubles order the exact distances (a NaN u is an exact +Infinity match).
+    if (d !== u) return d < u ? i - 1 : i;
+    // Equal after rounding: compare the exact rounding errors of d and u (TwoSum; no allocation). They are
+    // NaN when d is Infinity (an infinite neighbour or one overflow): then only a -Infinity lower neighbour
+    // with a finite upper one is the farther of the two.
+    const s = d - x, t = u - q;
+    return i - ((!((x - (d - s)) - (p + s) > (q - (u - t)) - (x + t)) && p * 0.5 + q * 0.5 !== -Infinity) | 0);
 }
 
 export function lowerBoundBranchlessU32(a, lo, hi, x) {
@@ -240,7 +254,14 @@ export function nearestU32(a, lo, hi, x) {
     const i = lowerBoundBranchlessU32(a, lo, hi, x);
     if (i === lo) return lo;
     if (i === hi) return hi - 1;
-    return x - a[i - 1] <= a[i] - x ? i - 1 : i;
+    const p = a[i - 1], q = a[i], d = x - p, u = q - x;
+    // Rounding is monotone: unequal doubles order the exact distances (a NaN u is an exact +Infinity match).
+    if (d !== u) return d < u ? i - 1 : i;
+    // Equal after rounding: compare the exact rounding errors of d and u (TwoSum; no allocation). They are
+    // NaN when d is Infinity (an infinite neighbour or one overflow): then only a -Infinity lower neighbour
+    // with a finite upper one is the farther of the two.
+    const s = d - x, t = u - q;
+    return i - ((!((x - (d - s)) - (p + s) > (q - (u - t)) - (x + t)) && p * 0.5 + q * 0.5 !== -Infinity) | 0);
 }
 
 export function lowerBoundBranchlessU16(a, lo, hi, x) {
@@ -312,7 +333,14 @@ export function nearestU16(a, lo, hi, x) {
     const i = lowerBoundBranchlessU16(a, lo, hi, x);
     if (i === lo) return lo;
     if (i === hi) return hi - 1;
-    return x - a[i - 1] <= a[i] - x ? i - 1 : i;
+    const p = a[i - 1], q = a[i], d = x - p, u = q - x;
+    // Rounding is monotone: unequal doubles order the exact distances (a NaN u is an exact +Infinity match).
+    if (d !== u) return d < u ? i - 1 : i;
+    // Equal after rounding: compare the exact rounding errors of d and u (TwoSum; no allocation). They are
+    // NaN when d is Infinity (an infinite neighbour or one overflow): then only a -Infinity lower neighbour
+    // with a finite upper one is the farther of the two.
+    const s = d - x, t = u - q;
+    return i - ((!((x - (d - s)) - (p + s) > (q - (u - t)) - (x + t)) && p * 0.5 + q * 0.5 !== -Infinity) | 0);
 }
 
 export function lowerBoundBranchlessI32(a, lo, hi, x) {
@@ -384,7 +412,14 @@ export function nearestI32(a, lo, hi, x) {
     const i = lowerBoundBranchlessI32(a, lo, hi, x);
     if (i === lo) return lo;
     if (i === hi) return hi - 1;
-    return x - a[i - 1] <= a[i] - x ? i - 1 : i;
+    const p = a[i - 1], q = a[i], d = x - p, u = q - x;
+    // Rounding is monotone: unequal doubles order the exact distances (a NaN u is an exact +Infinity match).
+    if (d !== u) return d < u ? i - 1 : i;
+    // Equal after rounding: compare the exact rounding errors of d and u (TwoSum; no allocation). They are
+    // NaN when d is Infinity (an infinite neighbour or one overflow): then only a -Infinity lower neighbour
+    // with a finite upper one is the farther of the two.
+    const s = d - x, t = u - q;
+    return i - ((!((x - (d - s)) - (p + s) > (q - (u - t)) - (x + t)) && p * 0.5 + q * 0.5 !== -Infinity) | 0);
 }
 // END GENERATED by scripts/gen.mjs
 

@@ -1,6 +1,6 @@
 # @zakkster/lite-bisect
 
-> Zero-GC binary search kernels for sorted typed arrays. Lower / upper bound (branchless and branchy), a galloping hint search, segment and nearest -- one monomorphic copy of every kernel per array type (Float64, Float32, Uint32, Uint16, Int32). No throw on the hot path; zero allocation where the kernel inlines into its caller or the query is a Smi; a contract you can read in one screen.
+> Zero-GC binary search kernels for sorted typed arrays. Lower / upper bound (branchless and branchy), a galloping hint search, segment and nearest -- one monomorphic copy of every kernel per array type (Float64, Float32, Uint32, Uint16, Int32). No throw on the hot path; zero allocation where the kernel inlines into its caller or every number argument is a Smi; a contract you can read in one screen.
 
 [![npm version](https://img.shields.io/npm/v/@zakkster/lite-bisect.svg?style=for-the-badge&color=latest)](https://www.npmjs.com/package/@zakkster/lite-bisect)
 [![sponsor](https://img.shields.io/badge/sponsor-PeshoVurtoleta-ea4aaa.svg?logo=github)](https://github.com/sponsors/PeshoVurtoleta)
@@ -75,6 +75,8 @@ Five array types, one contract, zero allocation where the kernel inlines into it
 ---
 
 ## Which call do I use
+
+LEDGER and RESEARCH ids refer to LEDGER.md and RESEARCH.md in the source repository; they are not in the npm tarball.
 
 | Call | When | Evidence (LEDGER / RESEARCH id) | Tier |
 |---|---|---|---|
@@ -247,18 +249,19 @@ For a monotone playhead the previous answer is a good hint, so `lowerBoundHintF6
 
 The sentence this package stands behind, on one line:
 
-zero allocation where the kernel inlines into its caller, or the query is a Smi; a non-Smi number query passed across a call V8 does not inline boxes one 16 B HeapNumber.
+zero allocation where the kernel inlines into its caller, or every number argument (the query; the hint of lowerBoundHint*; lo / hi) is a Smi; a non-Smi number computed at run time or read from a typed array (a fractional query, a NaN hint read from a Float64Array, -0 for lo / hi) and passed across a call V8 does not inline is boxed by the caller: one 16 B HeapNumber per call on Node. For no hint pass lo or the literal NaN: neither boxes.
 
 | Situation | Allocation |
 |---|---|
 | Kernel inlined into its caller (any query) | the floor |
-| Kernel called across a real call, Smi query | the floor |
-| Kernel called across a real call V8 does not inline, non-Smi query on Node (fractional, NaN, -0, or outside [-2^31, 2^31)) | one 16 B HeapNumber per call on Node (LEDGER C2); pointer-compressed V8 (Chrome / Electron: also [2^30, 2^31)) is unmeasured here |
+| Kernel called across a real call, every number argument a Smi (query; h; lo / hi), or h the literal NaN | the floor |
+| Kernel called across a real call V8 does not inline, a non-Smi query computed at run time or read from a typed array on Node (fractional, NaN, -0, or outside [-2^31, 2^31)) | one 16 B HeapNumber per call, made by the caller (LEDGER C2, C9); pointer-compressed V8 (Chrome / Electron: also [2^30, 2^31)) is unmeasured here |
+| `lowerBoundHint*` called with a NaN hint read from a Float64Array, across a call V8 does not inline | one 16 B HeapNumber per call, made by the CALLER (LEDGER C9); the literal `NaN` or `h = lo` is the floor |
 | `assertRange` / `assertSorted` | cold: the thrown `RangeError` and its message string (only on a failure) |
 
-Where TurboFan inlines a kernel (traced on the pinned Node, LEDGER C7), the non-Smi query never crosses a real call, so there is no box. Where it does not -- an un-optimized caller, or a call site V8 declines to inline -- there is. Pass a Smi query if a kernel sits across such a call.
+Where TurboFan inlines a kernel (traced on the pinned Node, LEDGER C7), the non-Smi query never crosses a real call, so there is no box. Where it does not -- an un-optimized caller, or a call site V8 declines to inline -- there is. Pass a Smi query, and h = lo (or the literal NaN) instead of a NaN read at run time, when a kernel sits across such a call.
 
-A wrapper is not a shield: segment* (25 B) and nearest* (86 B) fit Maglev's 100 B cap but their inner 103 B branchless call does not (LEDGER C1), so a Maglev-tier caller with a non-Smi query is expected to box 16 B per call (SPEC R1; expected, not traced here).
+A wrapper is not a shield: segment* (25 B) fits Maglev's 100 B cap but its inner 103 B branchless call does not (LEDGER C1), and nearest* (189 B) is expected not to be inlined by Maglev at all (189 B >= its 100 B cap; untraced; TurboFan inlines it), so a Maglev-tier caller with a non-Smi query is expected to box 16 B per call (SPEC R1; expected, not traced here).
 
 Inlining facts (LEDGER C1, C7): the branchless lower / upper bodies are 103 B of bytecode; Maglev does not inline them at its default 100 B cap, TurboFan does. The branchy pair is 55 B. This is a property of the pinned V8, never assumed: the 103 B count and the TurboFan pin are gated below; Maglev's refusal was traced in P0, not gated here (law 3: EXPECTED inlining is not TRACED).
 
@@ -266,15 +269,15 @@ Gated numbers (each is ONE run, quoted as a measurement, never as a law):
 
 | Gate | Result | Source and provenance |
 |---|---|---|
-| Oracle | 5 types x 4 seeds, 0 failures | `npm test`; `.handoff/p1/evidence/u4r2-coverage.log` (2026-11-11T07:24:26Z, node v26.8.2, load 4.64) |
-| Mutants | 100 rows, 100 killed, 0 survived, control PASS | `.handoff/p1/evidence/u4r2-mutants.log` (2026-11-11T07:24:08Z, node v26.8.2, load 4.78); the live row "every row KILLED (killed === rows)" passes in `npm test` |
-| Coverage (c8) | 100% lines (414 / 414), 100% branches (223 / 223), 37 / 37 functions | `.handoff/p1/evidence/u9-coverage.log` (2026-11-11T15:52:02Z, node v26.8.2, load averages 3.64 3.72 3.31; the coverage glob includes the docs test) |
-| Torture, phase 1 | 4096 cycles, 143360 / 143360 checks, size 0, alive 0, orphans 0, leaks 0 | `.handoff/p1/evidence/u7r2-torture.log` (2026-11-11T09:08:07Z, node v26.8.2, load 10.37) |
-| Torture, phase 2 | 35 / 35 lanes x 200000 ops per lane; retained B/op min -0.025, max 0.075; gc major 0, minor 0 | same log |
-| TurboFan inline pin | every pinned edge inlined (traced per kernel x type); the M4 size control passes on the pinned Node | `.handoff/p1/evidence/u5-test.log` (2026-11-11T06:38:48Z, node v26.8.2, V8 14.6.202.34, load 39.11); the M4 control skips (never passes) on any other Node |
-| Alloc gate, run A (inlined) | 140 / 140 lanes read at most 0.78 B/op in windows 1..5 (empty lane 0.52; tool floor 0.27) | `.handoff/p1/evidence/u6r2-gates.log` (2026-11-11T08:22:49Z, node v26.8.2, V8 14.6.202.34-node.28, load 2.80) |
-| Alloc gate, run B (not inlined) | non-Smi lanes (105) read 16.25 .. 16.63 B/op (one HeapNumber); Smi lanes (35) at most 0.61 B/op; empty lane 0.41 | same log |
-| Bytecode gate | branchless 103 B, branchy 55 B, hint 228 B, segment 25 B, nearest 86 B, five copies equal | same log |
+| Oracle | 5 types x 4 seeds plus a rounded-tie phase (>= 1000 rounded ties per seed on F64 / F32 / I32), exact BigInt reference, 0 failures; an independent exact nearest test (100,000 draws per type) | `npm test` in the same log as the Mutants row |
+| Mutants | 103 rows (5 per kernel x type + 3 rounded-tie rows), every row KILLED, control PASS | `.handoff/audit-b/evidence/components-sessionB.log` (2026-11-11T18:22:51Z..18:25:25Z, node v26.8.2, load averages 23.81 27.40 21.09 at start, host PRELIMINARY: other sessions busy; one run; `npm run verify` itself PENDING, quiet lock BUSY); the live row "every row KILLED (killed === rows)" |
+| Coverage (c8) | 100% lines (449 / 449), 100% branches (239 / 239), 37 / 37 functions | same log (`npm run coverage`; the coverage glob includes the docs test) |
+| Torture, phase 1 | 4096 cycles, 143360 / 143360 checks, size 0, alive 0, orphans 0, leaks 0 | same log (`npm run torture`, pinned flags) |
+| Torture, phase 2 | 35 / 35 lanes x 200000 ops per lane; retained B/op min 0.001, max 0.043; steady gc major 0, minor 0 (both gated) | same log |
+| TurboFan inline pin | every pinned edge inlined (traced per kernel x type); the M4 size control passes on the pinned Node (35 edges over the limit, nearest* now among them) | `npm test` in the same log as the Mutants row; the M4 control skips (never passes) on any other Node |
+| Alloc gate, run A (inlined) | 150 / 150 lanes read at most 0.82 B/op in windows 1..5 (empty lane 0.54; tool floor 0.27) | same log (`npm run gates:local`) |
+| Alloc gate, run B (not inlined) | non-Smi lanes (105) and the NaN-hint-read lanes (5) read 16.22 .. 16.95 B/op (one HeapNumber); Smi lanes (35) at most 0.97 B/op; literal-NaN-hint lanes (5) at most 0.68 B/op; empty lane 0.54 | same log |
+| Bytecode gate | branchless 103 B, branchy 55 B, hint 228 B, segment 25 B, nearest 189 B, five copies equal | same log |
 
 The alloc and bytecode gates are `npm run gates:local` (the LiteUtils tools, commit aed66841e7949130bc780147d765414873edc3b9, `alloc-per-op.mjs` sha256 d4386d85..., `bytecode-budget.sh` sha256 0b9c9157...). They run on the pinned Node v26.8.2 only and are NOT yet in `npm test` or hosted CI; a run on any other Node is NO VERDICT, never a pass. Tier: DETERMINISTIC when run, not yet wired into the default test run.
 
@@ -293,17 +296,21 @@ The alloc and bytecode gates are `npm run gates:local` (the LiteUtils tools, com
 - **Hint `h` is a caller error when it is not an integer or NaN.** It may return a wrong index or never return. This is documented, not guarded (P1-R9).
 - **Range capped at `hi - lo <= 2^30 - 1`** (P1-R8).
 
+### Known limits
+
+- **A NaN hint read at run time boxes in the caller (AU-R2 / AU-R3, LEDGER C9).** `lowerBoundHint*` itself allocates nothing for it; the caller's HeapNumber is made when a NaN read from a Float64Array crosses a call V8 does not inline: 16.03 B/op (lane `smiq_nan_from_f64`) against 0.03 B/op for the literal `NaN` (lane `smiq_nan_literal`). Reproduce with `audit/2026-11-11-bisect/cross-fable/cross-repro.mjs --d4 <Bisect.js> <lane>` (flags in its header). Measured 2026-11-11, darwin arm64, node v26.8.2, 2 runs, load1 1.5 / 2.0, by the audit's cross-check probe (a local audit artifact, not published: neither in the npm tarball nor tracked in the repository). For no hint pass `lo` or the literal `NaN`.
+
 ---
 
 ## Testing
 
-`npm test` runs 120 tests, 120 pass, 0 fail (`.handoff/p1/evidence/shake-r2-npm-test.log`, 2026-11-11T16:36:39Z, node v26.8.2, load averages 2.21 3.60 5.90; one run). They cover: a naive-reference oracle per type (4 seeds each), a boundary table (every kernel x type), the contract rows for `segment` / `nearest` / the asserts, mutant kills, golden parity of the generated kernels, the TurboFan inline pin, the types check, doc truth (snippets, Q-BOX, banned tokens; `test/Bisect.docs.test.mjs`), and tree-shaking (`test/Bisect.shake.test.mjs`).
+`npm test` runs 218 tests, 218 pass, 0 fail (`.handoff/audit-b/evidence/components-sessionB.log` (2026-11-11T18:22:51Z..18:25:25Z, node v26.8.2, load averages 23.81 27.40 21.09 at start, host PRELIMINARY: other sessions busy; one run; `npm run verify` itself PENDING, quiet lock BUSY)). They cover: a naive-reference oracle per type (4 seeds each), a boundary table (every kernel x type), the contract rows for `segment` / `nearest` / the asserts, mutant kills, golden parity of the generated kernels, the TurboFan inline pin, the types check, doc truth (snippets, Q-BOX, banned tokens; `test/Bisect.docs.test.mjs`), and tree-shaking (`test/Bisect.shake.test.mjs`).
 
 Tree-shaking is gated under esbuild 0.28 only (`test/Bisect.shake.test.mjs`, deterministic, part of `npm test`). A bundle that imports one kernel contains that kernel, the kernels it calls (lowerBoundHint* and nearest* call lowerBoundBranchless*, segment* calls upperBoundBranchless*, assertSorted calls assertRange), and no other top-level code. A bare side-effect import of Bisect.js (the gate imports it by path) emits no kernel, and esbuild reports that it honours `"sideEffects": false`. webpack, rollup and terser are not tested.
 
 ```bash
 npm test               # oracle, boundary, mutants, golden parity, gen check, inline pin, types, doc truth, tree-shaking
-npm run torture        # node --expose-gc test/torture.mjs : leak + retained-heap gate
+npm run torture        # node --expose-gc --no-concurrent-recompilation --min-semi-space-size=1 --max-semi-space-size=1 test/torture.mjs : leak + retained-heap + steady-minor gate
 npm run coverage       # c8, 100% lines and branches required
 npm run test:types     # tsc in node16 / nodenext / bundler resolution + export parity
 npm run gen:check      # the generated kernel region matches its template

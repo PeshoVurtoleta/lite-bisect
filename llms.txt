@@ -45,11 +45,13 @@ Kernel signature: (a, lo, hi, x) => number. The hint kernel adds h.
 
 ## Allocation
 
-zero allocation where the kernel inlines into its caller, or the query is a Smi; a non-Smi number query passed across a call V8 does not inline boxes one 16 B HeapNumber.
+zero allocation where the kernel inlines into its caller, or every number argument (the query; the hint of lowerBoundHint*; lo / hi) is a Smi; a non-Smi number computed at run time or read from a typed array (a fractional query, a NaN hint read from a Float64Array, -0 for lo / hi) and passed across a call V8 does not inline is boxed by the caller: one 16 B HeapNumber per call on Node. For no hint pass lo or the literal NaN: neither boxes.
 
-Pass a Smi query when a kernel sits across a call V8 does not inline.
+Pass a Smi query, and h = lo (or the literal NaN) instead of a NaN read at run time, when a kernel sits across a call V8 does not inline.
 
 ## Which call to choose
+
+LEDGER and RESEARCH ids refer to LEDGER.md and RESEARCH.md in the source repository; they are not in the npm tarball.
 
 - lowerBoundBranchless* / upperBoundBranchless*: the default for a read-only search. No speed is
   claimed. TurboFan inlines the 103 B body; Maglev does not inline it at its default 100 B cap
@@ -70,15 +72,15 @@ Pass a Smi query when a kernel sits across a call V8 does not inline.
 import { lowerBoundBranchlessF64, segmentF64, nearestF64, assertRange } from "@zakkster/lite-bisect";
 
 const a = new Float64Array([1, 3, 3, 5, 8]);
-assertRange(a, 0, 5);                      // cold, once
-const i = lowerBoundBranchlessF64(a, 0, 5, 3);   // 1
-const s = segmentF64(a, 0, 5, 4);                // 2
-const n = nearestF64(a, 0, 5, 4);                // 2 (tie -> lower)
+assertRange(a, 0, 5); // cold, once
+const i = lowerBoundBranchlessF64(a, 0, 5, 3);   // -> 1
+const s = segmentF64(a, 0, 5, 4);                // -> 2
+const n = nearestF64(a, 0, 5, 4);                // -> 2
 ```
 
 ## Gates (deterministic unless stated)
 
-oracle per type (4 seeds), boundary table, mutants (100 rows, all killed), torture with a
+oracle per type (4 seeds), boundary table, mutants (103 rows, all killed), torture with a
 retained-heap gate, c8 100% lines / branches, golden parity of the generated kernels, a TurboFan
 inline pin, tsc type checks (node16 / nodenext / bundler) with an export-parity test, a doc-truth
 test. Tree-shaking is gated under esbuild 0.28 only (one-kernel bundles carry that kernel plus its callees and no other top-level code; sideEffects: false honoured); webpack / rollup not tested. The size / pack gate (npm run size: pack file list + committed budgets) and npm run verify (test + torture + coverage + size + gates:local) are deterministic but outside npm test. The alloc + bytecode gates (npm run gates:local, LiteUtils tools) run on the pinned Node

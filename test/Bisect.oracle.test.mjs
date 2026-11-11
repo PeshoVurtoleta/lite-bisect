@@ -15,7 +15,7 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as B from '../Bisect.js';
 import {
-    TYPE_NAMES, KERNELS, census, runOracle, goldenReplay, naiveLower,
+    TYPES, TYPE_NAMES, KERNELS, census, runOracle, goldenReplay, naiveLower, naiveNearest,
 } from './oracle.mjs';
 
 const BISECT_PATH = fileURLToPath(new URL('../Bisect.js', import.meta.url));
@@ -99,7 +99,12 @@ for (const T of TYPE_NAMES) {
             for (const name of expected) assert.ok(r.perName[name] > 0, name + ' ran 0 checks');
             assert.equal(r.fails, 0, T + ' seed ' + seed + ': ' + r.fails + ' FAIL\n' + r.msgs.join('\n'));
             assert.ok(r.checks >= MIN_CHECKS, T + ' seed ' + seed + ': checks ' + r.checks + ' < ' + MIN_CHECKS);
-            console.log('oracle ' + T + ' seed ' + seed + ' checks ' + r.checks + ' fails ' + r.fails);
+            // R-ORACLE coverage floor: the rounded-tie phase must reach >= 1000 false rounded ties where
+            // they exist (F64 / F32 / I32); on U32 / U16 none exists (an integer pair has an exact midpoint).
+            if (T === 'F64' || T === 'F32' || T === 'I32') {
+                assert.ok(r.roundedTies >= 1000, T + ' seed ' + seed + ': rounded ties ' + r.roundedTies + ' < 1000');
+            }
+            console.log('oracle ' + T + ' seed ' + seed + ' checks ' + r.checks + ' fails ' + r.fails + ' roundedTies ' + r.roundedTies);
         }
     });
 }
@@ -115,11 +120,37 @@ const okHint = (a, lo, hi, x, h) => okLower(a, lo, hi, x);
 const badHint = (a, lo, hi, x, h) => (x !== x && h >= lo && h <= hi ? h : okLower(a, lo, hi, x));   // B1 mutant
 const okSeg = (a, lo, hi, x) => okUpper(a, lo, hi, x) - 1;
 const badSeg = (a, lo, hi, x) => okLower(a, lo, hi, x) - 1;
+// The nearest control decides the distance comparison EXACTLY (R-ORACLE), never with the kernel's
+// rounded x - a[i - 1] <= a[i] - x: each finite double is split by a DataView into a BigInt
+// mantissa and a power of two, both sides are scaled to the smaller exponent, then compared.
+// Written here, apart from oracle.mjs's exactUnits, so the control and the oracle share no code.
+const DV = new DataView(new ArrayBuffer(8));
+const split = (v) => {                       // finite v = m * 2^e, m a BigInt
+    DV.setFloat64(0, v);
+    const hi = DV.getUint32(0), lo = DV.getUint32(4);
+    const be = (hi >>> 20) & 0x7ff;
+    let m = (BigInt(hi & 0xfffff) << 32n) | BigInt(lo);
+    if (be !== 0) m |= 1n << 52n;
+    return { m: hi >>> 31 ? -m : m, e: (be === 0 ? 1 : be) - 1075 };
+};
+const exactCmp = (d0p, d0n, d1p, d1n) => {  // sign of (d0p - d0n) - (d1p - d1n), all finite doubles
+    const t = [split(d0p), split(d0n), split(d1p), split(d1n)];
+    let e = t[0].e;
+    for (const s of t) if (s.e < e) e = s.e;
+    const v = t.map((s) => s.m << BigInt(s.e - e));
+    const d = (v[0] - v[1]) - (v[2] - v[3]);
+    return d < 0n ? -1 : d > 0n ? 1 : 0;
+};
 const nearestWith = (le) => (a, lo, hi, x) => {
     const i = okLower(a, lo, hi, x);
     if (i === lo) return lo;
     if (i === hi) return hi - 1;
-    return le ? (x - a[i - 1] <= a[i] - x ? i - 1 : i) : (x - a[i - 1] < a[i] - x ? i - 1 : i);
+    const p = a[i - 1], q = a[i];
+    if (q === x) return i;               // an exact match (a[i] >= x) wins, Infinity included
+    // Infinities by case (x is finite between p < x < q): an infinite distance loses; both -> tie.
+    const c = p === -Infinity || q === Infinity ? (p === -Infinity ? 1 : 0) - (q === Infinity ? 1 : 0)
+        : exactCmp(x, p, q, x);
+    return le ? (c <= 0 ? i - 1 : i) : (c < 0 ? i - 1 : i);
 };
 const okNear = nearestWith(true);
 const badNear = nearestWith(false);   // tie -> UPPER index
@@ -145,6 +176,23 @@ test('oracle controls: the correct local kernels pass; each local mutant is caug
             assert.ok(r.fails > 0, 'mutant ' + k + T + ' NOT caught');
             for (const msg of r.msgs) assert.ok(msg.startsWith(k + T + ' '), 'a non-mutated row failed: ' + msg);
         }
+    }
+});
+
+test('R-ORACLE: naiveNearest and the local nearest control decide rounded ties exactly (literal answers)', () => {
+    // [type, values, x, exact nearest]: the rounded x - a[L] <= a[U] - x says 0 on every `1` row.
+    const rows = [
+        ['F64', [-3, 4], 0.5000000000000001, 1], ['F32', [-3, 4], 0.5000000000000001, 1],
+        ['I32', [-3, 4], 0.5000000000000001, 1], ['I32', [-1, 1], 1e-17, 1], ['F64', [-(2 ** 53), 2 ** 53 + 4], 2.5, 1],
+        ['F64', [-2, -1e-17], -1, 1], ['F64', [-1e-300, 6], 3, 1], ['F64', [-Infinity, 1e308], -1e308, 1],
+        ['I32', [-2147483648, 2147483647], -0.4999999999999999, 1], ['F32', [-(2 ** 60), 2 ** 60 + 2 ** 38], 2 ** 37 + 1, 1],
+        ['F64', [5e-324, 2.5e-323], 1.5e-323, 0], ['F64', [-Infinity, Infinity], 0, 0], ['F64', [-Infinity, 5], 1, 1],
+        ['F64', [1, Infinity], 1e300, 0], ['F64', [1, Infinity], Infinity, 1], ['U16', [1, 3], 2, 0], ['F64', [1, 3, 3, 5, 8], 4, 2],
+    ];
+    for (const [T, vals, x, want] of rows) {
+        const a = TYPES[T].from(vals), tag = T + ' [' + vals.join(', ') + '] x=' + x;
+        assert.equal(naiveNearest(a, 0, a.length, x), want, 'naiveNearest ' + tag);
+        assert.equal(okNear(a, 0, a.length, x), want, 'okNear ' + tag);
     }
 });
 

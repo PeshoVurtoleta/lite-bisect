@@ -76,5 +76,12 @@ export function nearest$T(a, lo, hi, x) {
     const i = lowerBoundBranchless$T(a, lo, hi, x);
     if (i === lo) return lo;
     if (i === hi) return hi - 1;
-    return x - a[i - 1] <= a[i] - x ? i - 1 : i;
+    const p = a[i - 1], q = a[i], d = x - p, u = q - x;
+    // Rounding is monotone: unequal doubles order the exact distances (a NaN u is an exact +Infinity match).
+    if (d !== u) return d < u ? i - 1 : i;
+    // Equal after rounding: compare the exact rounding errors of d and u (TwoSum; no allocation). They are
+    // NaN when d is Infinity (an infinite neighbour or one overflow): then only a -Infinity lower neighbour
+    // with a finite upper one is the farther of the two.
+    const s = d - x, t = u - q;
+    return i - ((!((x - (d - s)) - (p + s) > (q - (u - t)) - (x + t)) && p * 0.5 + q * 0.5 !== -Infinity) | 0);
 }

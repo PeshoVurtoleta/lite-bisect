@@ -190,7 +190,7 @@ test('M4 control: under --max-inlined-bytecode-size=102 exactly the > 102 B edge
     const limit = EXPECT.m4.limit;
     assert.equal(EXPECT.m4.flag, '--max-inlined-bytecode-size=' + limit);
     const want = EDGES.filter((e) => e.op === '==' && e.bytes > limit).map((e) => e.id).sort();
-    assert.equal(want.length, 30, 'per type: branchless pair, hint, hint inner, segment inner, nearest inner');
+    assert.equal(want.length, 35, 'per type (x5): branchless pair, hint, hint inner, segment inner, nearest inner, and nearest itself (189 B since AU-R1a: 30 -> 35)');
     const v = verdict(EDGES, runDriver([EXPECT.m4.flag], []));
     assert.equal(v.noVerdict, null, v.noVerdict);
     assert.deepEqual(failing(v), want);

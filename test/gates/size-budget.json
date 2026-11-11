@@ -1,6 +1,6 @@
 {
-  "about": "U9 size / pack budgets (test/gates/size.test.mjs). Committed literals, never computed in the run that checks them (LEDGER law 9). Each budget = measured + 5% (floor), headroom < 10% so the measured x 1.10 control trips. Measured 2026-11-11, node v26.8.2, npm 11.19.1, HEAD d5d5736 + working tree (U8 docs, U9 package.json scripts), Bisect.js 43add0b5: tarballBytes 14028 (npm pack --dry-run --json size), unpackedBytes 60918 (unpackedSize), strippedBisectBytes 10094 (Bisect.js 13928 B raw, comments stripped). Raise a budget only by re-measuring and re-recording here.",
-  "tarballBytes": 14729,
-  "unpackedBytes": 63963,
-  "strippedBisectBytes": 10598
+  "about": "U9 size / pack budgets (test/gates/size.test.mjs). Committed literals, never computed in the run that checks them (LEDGER law 9). Each budget = measured + 5% (floor), headroom < 10% so the measured x 1.10 control trips. Measured 2026-11-11, node v26.8.2, npm 11.19.1, HEAD d5d5736 + working tree (U8 docs, U9 package.json scripts), Bisect.js 43add0b5: tarballBytes 14028 (npm pack --dry-run --json size), unpackedBytes 60918 (unpackedSize), strippedBisectBytes 10094 (Bisect.js 13928 B raw, comments stripped). Raise a budget only by re-measuring and re-recording here. strippedBisectBytes re-measured 2026-11-11 (audit B3, AU-R1a nearest body + AU-R3 header sentence), node v26.8.2, Bisect.js 17095 B raw: 11164 stripped -> budget 11722 (x 1.05, floor); tarballBytes / unpackedBytes NOT re-measured here (docs in flight). Re-measured 2026-11-11 (P1 final audit Session B, orchestrator), node v26.8.2, npm 11.19.1, HEAD 2c88366 + working tree (AU-R1a nearest body, Bisect.js 10add825, audit doc fixes): tarballBytes 16451, unpackedBytes 70814 -> budgets 17273 / 74354 (x1.05 floor). Raise a budget only by re-measuring and re-recording here.",
+  "tarballBytes": 17273,
+  "unpackedBytes": 74354,
+  "strippedBisectBytes": 11722
 }

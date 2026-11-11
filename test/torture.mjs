@@ -1,6 +1,19 @@
 // test/torture.mjs -- the lite-bisect torture gate (SPEC-p1 U4, assertion 7). Run via
-// `npm run torture` (node --expose-gc test/torture.mjs). Two phases, GC COUNTS only (the
-// DETERMINISTIC tier): no timing threshold anywhere.
+// `npm run torture` (node --expose-gc --no-concurrent-recompilation --min-semi-space-size=1 --max-semi-space-size=1
+// test/torture.mjs).
+// Two phases, GC COUNTS only (the DETERMINISTIC tier): no timing threshold anywhere.
+// Semi-space pin (AU-R5): the run REFUSES before any lane -- prints
+// `torture: NO VERDICT -- run with --min-semi-space-size=1 --max-semi-space-size=1` and exits 2 -- unless
+// process.execArgv holds both flags with exactly these values and NO other semi-space flag (V8 takes the LAST
+// value of a repeated flag and reads '_' as '-': a later --max-semi-space-size=16 or --max_semi_space_size=16
+// would override the pin and let a 16 B/op plant read minor 0). The refusal also covers one-dash spellings and
+// --minor-ms (the AU-R5b class-3 refusal: its young GCs are a kind the profiler does not count). Pinned to 1 MB, a 16 B/op box over a
+// 200,000-op lane (3.2 MB) must scavenge, so steady maxMinor 0 sees it; unpinned, new space grows and a
+// 16 B/op plant passes (cross-opus, audit 2026-11-11). Exit codes: 0 ok, 1 FAIL, 2 NO VERDICT.
+// --no-concurrent-recompilation (B3 finding, not refused here): with concurrent TurboFan jobs a loaded host
+// leaves a lane in a non-inlining tier past its 20,000-op warm-up, the fractional / NaN queries box across
+// the kernel call and the CLEAN build reads steady minor 1..8 (16 / 16 runs FAILED with 8 tortures in
+// parallel; 16 / 16 passed with the flag, B3 2026-11-11). Synchronous tier-up makes the count deterministic.
 //
 // Phase 1, retention (@zakkster/lite-leak): 4096 cycles, each inside a lite-signal root. A
 // cycle builds a sorted typed array (the oracle's TYPE_NAMES in turn), runs all 7 kernels of
@@ -19,10 +32,13 @@
 // a family x type with no lane (or two) fails. Per lane, in its own profiler window: a settled
 // heap + arrayBuffers sample (two forced GCs) before and after, the steady loop in phase
 // 'steady', the GC observer drained with settle() before summary() (GC entries arrive
-// asynchronously). Gate per lane (laneOk): steady maxMajor 0, arrayBuffers growth 0, AND
+// asynchronously). Gate per lane (laneOk): steady maxMajor 0 AND maxMinor 0 (AU-R5: any scavenge in the
+// steady loop is an allocation per op), arrayBuffers growth 0, AND
 // -1.0 < retained heap < 1.0 B/op (P1-R10, LEDGER B4) -- retained = settled heapUsed after minus
-// before, / 200,000. It is RETENTION, not allocation: a short-lived box dies before the settled
-// sample and reads ~0 here (allocation per op is U6's lanes).
+// before, / 200,000. That term is RETENTION, not allocation: a short-lived box dies before the
+// settled sample and reads ~0 there; under the pin, steady maxMinor 0 is the term that sees it
+// (the B/op number per lane is U6's lanes). Resolution: one 1 MB semi-space over 200,000 ops means the steady
+// minor check only sees allocation of roughly >= 5 B/op; the per-op bar stays the U6 alloc gate's job.
 // Controls, each MUST be flagged or the run FAILS:
 //   CONTROL-alloc retains a 128 B Float64Array per op and runs one full GC mid-window: flagged
 //   on BOTH GC channels (an arrayBuffers violation and a steady major).
@@ -48,6 +64,14 @@ import {
 import { createRoot, effect, createRegistry, setDefaultRegistry } from '@zakkster/lite-signal';
 import { pathToFileURL } from 'node:url';
 import { naiveLower, naiveUpper, naiveSegment, naiveNearest, makeRng, KERNELS, TYPE_NAMES } from './oracle.mjs';
+
+// AU-R5: refuse before the build is imported and before any lane (exact flag values; fail closed).
+const PIN_FLAGS = ['--min-semi-space-size=1', '--max-semi-space-size=1'];
+const SEMI = process.execArgv.filter((f) => /^--?(min|max)[-_]semi[-_]space[-_]size/.test(f));
+if (SEMI.length !== 2 || !PIN_FLAGS.every((f) => SEMI.includes(f)) || process.execArgv.some((f) => /^--?minor[-_]ms/.test(f))) {
+    console.error('torture: NO VERDICT -- run with --min-semi-space-size=1 --max-semi-space-size=1');
+    process.exit(2);
+}
 
 const MOD = process.env.LITE_BISECT_TORTURE_MODULE
     ? pathToFileURL(process.env.LITE_BISECT_TORTURE_MODULE).href
@@ -273,7 +297,7 @@ async function measureLane(fn) {
     const st = await gc.settle();
     const s = gc.summary();
     gc.stop();
-    const report = checkNoGc(s, { maxArrayBuffersGrowth: 0, phases: { steady: { maxMajor: 0 } } });
+    const report = checkNoGc(s, { maxArrayBuffersGrowth: 0, phases: { steady: { maxMajor: 0, maxMinor: 0 } } });
     if (!st || st.drained === false) report.ok = false;
     return { s, report, bpo: (m1.heapUsed - m0.heapUsed) / HOT };
 }

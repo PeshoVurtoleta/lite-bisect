@@ -252,7 +252,7 @@ The program spec is `.handoff/p1/SPEC-p1.md` (gitignored). Rulings, quoted:
 | P1-R7 | "Follow the B1 NaN contract (Recommended)" | NaN query: `nearest` -> lo, `segment` -> lo - 1; an exact match (+-Infinity included) wins; past either end -> lo or hi - 1; tie -> LOWER index |
 | P1-R8 | "Cap at 2^30 - 1 (Recommended)" | Q-GUARD's cap becomes hi - lo <= 2^30 - 1: `assertRange` throws RangeError at 2^30, because the frozen hint body never returns there (LEDGER B2); no hot byte changes |
 | P1-R9 | "Caller error, documented (Recommended)" | `lowerBoundHint`'s h must be an integer index or NaN (NaN -> lo; outside [lo, hi] clamped); a non-integer h is a caller error that may return a wrong index or never return (the frozen body hangs on h = 10.5), like a non-integer range; documented in the Bisect.js header and the .d.ts JSDoc; no hot bytes, no new export, no cold check (asked 2026-11-11 in the P1 coder burst after the U2 review) |
-| P1-R10 | "R < 1.0 B/op (Recommended)" | The torture gates the retained heap per 200,000-op lane: every lane reads retained < 1.0 B/op (head read 0.071..0.107 over 5 runs), plus a must-fail control lane that retains one small on-heap object per op; deterministic tier, in `npm run torture` (asked 2026-11-11 in P1 coder burst 2 after the U4 review found the channel measured but never gated, LEDGER B4) |
+| P1-R10 | "R < 1.0 B/op (Recommended)" | (steady minor GCs reopened by AU-R5, 5c) The torture gates the retained heap per 200,000-op lane: every lane reads retained < 1.0 B/op (head read 0.071..0.107 over 5 runs), plus a must-fail control lane that retains one small on-heap object per op; deterministic tier, in `npm run torture` (asked 2026-11-11 in P1 coder burst 2 after the U4 review found the channel measured but never gated, LEDGER B4) |
 | P1-R11 | "Add --no-maglev-inlining (Recommended)" | U6 alloc gate run B (not inlined) runs `--no-turbo-inlining --no-maglev-inlining`, tier check requires both; every window 1..5 read (asked 2026-11-11 in P1 coder burst 3: with the TurboFan flag alone Maglev inlined the lane and the 55 B branchy body in window 1, 0.49..0.86 B/op) |
 | P1-R12 | "Empty-lane NO VERDICT (Recommended)" | Each U6 alloc run measures an empty lane with its own flags; > 1.0 B/op in any window 1..5 = NO VERDICT (gate FAIL, labelled harness-noisy), never a pass; thresholds unchanged (asked 2026-11-11 in P1 coder burst 3: an empty lane read 1.03 at load1 ~28) |
 | P1-R13 | "7.0.2; node10 -> nodenext (Recommended)" | typescript pinned exactly 7.0.2 (P1-R5); the U7 types gate runs node16 / nodenext / bundler; the node10 control becomes a types.exports.test row (package.json top-level `types` === exports["."].types === "./Bisect.d.ts", must-fail controls: removed, mismatched) (asked 2026-11-11 in P1 coder burst 4: typescript 7.0.2 removed moduleResolution node10, TS5108, probed) |
@@ -263,6 +263,23 @@ its reads would go megamorphic, LEDGER C3). Void at 1.0 (Q-KERNELS): section 6's
 `LINEAR_MAX: 8` example, and 2 of section 4's 6 starting mutants (Eytzinger, linear). Until LiteUtils 1.0 is on npm
 (P1-R1), section 6's alloc-per-op and bytecode-size gates run in `npm run gates`, not `npm test`, and section 8's P1
 lite-utils devDependency line is deferred. Section 6's "2^30 cap" means hi - lo <= 2^30 - 1 (P1-R8).
+
+## 5c. P1 final-audit rulings (maintainer, 2026-11-11, Session B step B2)
+
+Asked 2026-11-11 in P1 final audit Session B (B2), one AskUserQuestion sitting after the cross-check (audit/2026-11-11-bisect/cross-{opus,fable}/CROSS.md); all answered. Quoted:
+
+| Id | Question | Ruling | Means |
+|---|---|---|---|
+| AU-R1 | D6 R-NEAREST | "FIX, 167 B body (Recommended)" | nearest* gets cross-fable's exact 167 B body (d0 !== d1 fast path, TwoSum error terms, branch-free tail); leaves Maglev's 100 B inline cap (TurboFan still inlines); SPEC "nearest < 100" -> "== 167"; class 1 |
+| AU-R1a | AU-R1 gap (B3) | "Fable's 189 B body (Recommended)" | AMENDS AU-R1: the 167 B body returned 0 on F64 [-Infinity, 1e308] x = -1e308 (exact 1; both distances overflow); nearest* gets reviewer-fable's 189 B body with the -Infinity overflow term; SPEC nearest == traced (~189 B) |
+| AU-R2 | D2 R-NANHINT-BOX class | "Class 2, release-blocking (Recommended)" | class 2 / DOCUMENT: the caller boxes (D4), no package code allocates; the sentence fails open, so it lands before /release 1.0.0 |
+| AU-R3 | R-NANHINT-BOX sentence | "Caller-box wording (Recommended)" | the caller-box sentence (Smi / literal-NaN exempt; a run-time non-Smi number argument across a non-inlined call is boxed by the caller, 16 B on Node; pass lo or literal NaN) in header, d.ts, README, llms.txt, CHANGELOG, QBOX literal; alloc-bench lanes lowerBoundHint<T>.nanhint (~16 B) and .nanlit (<= 1 B) in gates:local |
+| AU-R4 | D3 R-LLMS-SNIPPETS class | "Class 2, fix now (Recommended)" | class 2; fixed now: llms.txt results in the checked `// -> n` form, docs.test runs llms.txt fences, a row fails on a bare `// <number>` result comment |
+| AU-R5 | R-TORTURE-MINOR scope | "Reopen B4: minor 0 + pin (Recommended)" | LEDGER B4 / P1-R10 reopened (mechanism: a published minor-GC count no verdict holds; no allocation gate in npm test / CI): steady maxMinor 0, torture script pins --min-semi-space-size=1 --max-semi-space-size=1, NO VERDICT exit 2 without them, a 16 B/op must-fail plant exits 1 |
+| AU-R5a | AU-R5 tier flag (B3) | "Accept the flag (Recommended)" | the torture script adds `--no-concurrent-recompilation` (clean build failed under load without it: concurrent TurboFan left lanes un-inlined, so non-Smi queries boxed); NO VERDICT still checks only the two semi-space flags |
+| AU-R5b | torture pin, flag tricks (B3) | "Class 3, one-line refusal (Recommended)" | class 3: the pin check also refuses one-dash semi-space spellings and `--minor-ms` (exit 2); lite-gc-profiler counts young GCs of kind 2 (--minor-ms) as not minor: an upstream lead (LEDGER B9) |
+| AU-R6 | R-RESEARCH-REF | "Pointer sentence + docs row (Recommended)" | keep the citations; one pointer sentence in README and llms.txt (LEDGER / RESEARCH ids live in the source repository, not the tarball); a docs row with a planted-citation control; llms.txt:60-61 untouched (D1); no package.json change |
+| AU-R7 | R-DTS-TIER | "Tiered warning (Recommended)" | d.ts x5: "on incoherent streams it can be slower than lowerBoundBranchless* (PRELIMINARY, one CPU; no timing lane gated)"; a docs row fails on an untiered d.ts slower / faster sentence |
 
 ## 6. Verification plan, by tier
 

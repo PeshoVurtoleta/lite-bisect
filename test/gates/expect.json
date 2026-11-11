@@ -1,5 +1,5 @@
 {
-  "about": "U5 TurboFan inline pin (SPEC-p1 U5, assertion 8). EXPECTED values typed from SPEC-p1 section 1 and the U2 one-shot report .handoff/p1/evidence/u2-bytecode.log (v26.8.2); never computed from Bisect.js (LEDGER law 9). bytes + op: \"==\" exact bytecode size, \"<\" a budget (segment nominal 25 B, nearest nominal 86 B on v26.8.2). maglevInlines and maglevMaxBytes are untraced info (LEDGER C1 / C7), not gated: Maglev refuses a callee of >= 100 B. turbofanInlines: the caller literal call_<name> gets an Inlining line for <name>. inner: the kernel <name> calls; TurboFan names the OUTERMOST function being compiled after \"into\" (traced on v26.8.2, U5), so the inner kernel is pinned as \"Inlining <inner.name> into call_<name>\", inner.sites lines.",
+  "about": "U5 TurboFan inline pin (SPEC-p1 U5, assertion 8). EXPECTED values typed from SPEC-p1 section 1 and the U2 one-shot report .handoff/p1/evidence/u2-bytecode.log (v26.8.2); never computed from Bisect.js (LEDGER law 9). bytes + op: \"==\" exact bytecode size, \"<\" a budget (segment nominal 25 B on v26.8.2). nearest is \"==\" 189: the AU-R1a exact-tie body (audit 2026-11-11, ruling AU-R1a), TRACED on v26.8.2 (--print-bytecode, all 5 copies 189 B); TurboFan inlines it (gated in test/Bisect.inline.test.mjs); Maglev is expected not to at >= 100 B (maglevInlines false, untraced). maglevInlines and maglevMaxBytes are untraced info (LEDGER C1 / C7), not gated: Maglev refuses a callee of >= 100 B. turbofanInlines: the caller literal call_<name> gets an Inlining line for <name>. inner: the kernel <name> calls; TurboFan names the OUTERMOST function being compiled after \"into\" (traced on v26.8.2, U5), so the inner kernel is pinned as \"Inlining <inner.name> into call_<name>\", inner.sites lines.",
   "pinned": {
     "node": "v26.8.2",
     "v8Prefix": "14.6.202.34"
@@ -16,34 +16,34 @@
     { "name": "upperBoundBranchyF64", "kernel": "upperBoundBranchy", "type": "F64", "bytes": 55, "op": "==", "maglevInlines": true, "turbofanInlines": true, "inner": null },
     { "name": "lowerBoundHintF64", "kernel": "lowerBoundHint", "type": "F64", "bytes": 228, "op": "==", "maglevInlines": false, "turbofanInlines": true, "inner": { "name": "lowerBoundBranchlessF64", "sites": 2 } },
     { "name": "segmentF64", "kernel": "segment", "type": "F64", "bytes": 100, "op": "<", "maglevInlines": true, "turbofanInlines": true, "inner": { "name": "upperBoundBranchlessF64", "sites": 1 } },
-    { "name": "nearestF64", "kernel": "nearest", "type": "F64", "bytes": 100, "op": "<", "maglevInlines": true, "turbofanInlines": true, "inner": { "name": "lowerBoundBranchlessF64", "sites": 1 } },
+    { "name": "nearestF64", "kernel": "nearest", "type": "F64", "bytes": 189, "op": "==", "maglevInlines": false, "turbofanInlines": true, "inner": { "name": "lowerBoundBranchlessF64", "sites": 1 } },
     { "name": "lowerBoundBranchlessF32", "kernel": "lowerBoundBranchless", "type": "F32", "bytes": 103, "op": "==", "maglevInlines": false, "turbofanInlines": true, "inner": null },
     { "name": "upperBoundBranchlessF32", "kernel": "upperBoundBranchless", "type": "F32", "bytes": 103, "op": "==", "maglevInlines": false, "turbofanInlines": true, "inner": null },
     { "name": "lowerBoundBranchyF32", "kernel": "lowerBoundBranchy", "type": "F32", "bytes": 55, "op": "==", "maglevInlines": true, "turbofanInlines": true, "inner": null },
     { "name": "upperBoundBranchyF32", "kernel": "upperBoundBranchy", "type": "F32", "bytes": 55, "op": "==", "maglevInlines": true, "turbofanInlines": true, "inner": null },
     { "name": "lowerBoundHintF32", "kernel": "lowerBoundHint", "type": "F32", "bytes": 228, "op": "==", "maglevInlines": false, "turbofanInlines": true, "inner": { "name": "lowerBoundBranchlessF32", "sites": 2 } },
     { "name": "segmentF32", "kernel": "segment", "type": "F32", "bytes": 100, "op": "<", "maglevInlines": true, "turbofanInlines": true, "inner": { "name": "upperBoundBranchlessF32", "sites": 1 } },
-    { "name": "nearestF32", "kernel": "nearest", "type": "F32", "bytes": 100, "op": "<", "maglevInlines": true, "turbofanInlines": true, "inner": { "name": "lowerBoundBranchlessF32", "sites": 1 } },
+    { "name": "nearestF32", "kernel": "nearest", "type": "F32", "bytes": 189, "op": "==", "maglevInlines": false, "turbofanInlines": true, "inner": { "name": "lowerBoundBranchlessF32", "sites": 1 } },
     { "name": "lowerBoundBranchlessU32", "kernel": "lowerBoundBranchless", "type": "U32", "bytes": 103, "op": "==", "maglevInlines": false, "turbofanInlines": true, "inner": null },
     { "name": "upperBoundBranchlessU32", "kernel": "upperBoundBranchless", "type": "U32", "bytes": 103, "op": "==", "maglevInlines": false, "turbofanInlines": true, "inner": null },
     { "name": "lowerBoundBranchyU32", "kernel": "lowerBoundBranchy", "type": "U32", "bytes": 55, "op": "==", "maglevInlines": true, "turbofanInlines": true, "inner": null },
     { "name": "upperBoundBranchyU32", "kernel": "upperBoundBranchy", "type": "U32", "bytes": 55, "op": "==", "maglevInlines": true, "turbofanInlines": true, "inner": null },
     { "name": "lowerBoundHintU32", "kernel": "lowerBoundHint", "type": "U32", "bytes": 228, "op": "==", "maglevInlines": false, "turbofanInlines": true, "inner": { "name": "lowerBoundBranchlessU32", "sites": 2 } },
     { "name": "segmentU32", "kernel": "segment", "type": "U32", "bytes": 100, "op": "<", "maglevInlines": true, "turbofanInlines": true, "inner": { "name": "upperBoundBranchlessU32", "sites": 1 } },
-    { "name": "nearestU32", "kernel": "nearest", "type": "U32", "bytes": 100, "op": "<", "maglevInlines": true, "turbofanInlines": true, "inner": { "name": "lowerBoundBranchlessU32", "sites": 1 } },
+    { "name": "nearestU32", "kernel": "nearest", "type": "U32", "bytes": 189, "op": "==", "maglevInlines": false, "turbofanInlines": true, "inner": { "name": "lowerBoundBranchlessU32", "sites": 1 } },
     { "name": "lowerBoundBranchlessU16", "kernel": "lowerBoundBranchless", "type": "U16", "bytes": 103, "op": "==", "maglevInlines": false, "turbofanInlines": true, "inner": null },
     { "name": "upperBoundBranchlessU16", "kernel": "upperBoundBranchless", "type": "U16", "bytes": 103, "op": "==", "maglevInlines": false, "turbofanInlines": true, "inner": null },
     { "name": "lowerBoundBranchyU16", "kernel": "lowerBoundBranchy", "type": "U16", "bytes": 55, "op": "==", "maglevInlines": true, "turbofanInlines": true, "inner": null },
     { "name": "upperBoundBranchyU16", "kernel": "upperBoundBranchy", "type": "U16", "bytes": 55, "op": "==", "maglevInlines": true, "turbofanInlines": true, "inner": null },
     { "name": "lowerBoundHintU16", "kernel": "lowerBoundHint", "type": "U16", "bytes": 228, "op": "==", "maglevInlines": false, "turbofanInlines": true, "inner": { "name": "lowerBoundBranchlessU16", "sites": 2 } },
     { "name": "segmentU16", "kernel": "segment", "type": "U16", "bytes": 100, "op": "<", "maglevInlines": true, "turbofanInlines": true, "inner": { "name": "upperBoundBranchlessU16", "sites": 1 } },
-    { "name": "nearestU16", "kernel": "nearest", "type": "U16", "bytes": 100, "op": "<", "maglevInlines": true, "turbofanInlines": true, "inner": { "name": "lowerBoundBranchlessU16", "sites": 1 } },
+    { "name": "nearestU16", "kernel": "nearest", "type": "U16", "bytes": 189, "op": "==", "maglevInlines": false, "turbofanInlines": true, "inner": { "name": "lowerBoundBranchlessU16", "sites": 1 } },
     { "name": "lowerBoundBranchlessI32", "kernel": "lowerBoundBranchless", "type": "I32", "bytes": 103, "op": "==", "maglevInlines": false, "turbofanInlines": true, "inner": null },
     { "name": "upperBoundBranchlessI32", "kernel": "upperBoundBranchless", "type": "I32", "bytes": 103, "op": "==", "maglevInlines": false, "turbofanInlines": true, "inner": null },
     { "name": "lowerBoundBranchyI32", "kernel": "lowerBoundBranchy", "type": "I32", "bytes": 55, "op": "==", "maglevInlines": true, "turbofanInlines": true, "inner": null },
     { "name": "upperBoundBranchyI32", "kernel": "upperBoundBranchy", "type": "I32", "bytes": 55, "op": "==", "maglevInlines": true, "turbofanInlines": true, "inner": null },
     { "name": "lowerBoundHintI32", "kernel": "lowerBoundHint", "type": "I32", "bytes": 228, "op": "==", "maglevInlines": false, "turbofanInlines": true, "inner": { "name": "lowerBoundBranchlessI32", "sites": 2 } },
     { "name": "segmentI32", "kernel": "segment", "type": "I32", "bytes": 100, "op": "<", "maglevInlines": true, "turbofanInlines": true, "inner": { "name": "upperBoundBranchlessI32", "sites": 1 } },
-    { "name": "nearestI32", "kernel": "nearest", "type": "I32", "bytes": 100, "op": "<", "maglevInlines": true, "turbofanInlines": true, "inner": { "name": "lowerBoundBranchlessI32", "sites": 1 } }
+    { "name": "nearestI32", "kernel": "nearest", "type": "I32", "bytes": 189, "op": "==", "maglevInlines": false, "turbofanInlines": true, "inner": { "name": "lowerBoundBranchlessI32", "sites": 1 } }
   ]
 }

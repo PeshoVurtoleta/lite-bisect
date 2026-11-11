@@ -1,5 +1,5 @@
 {
-  "comment": "LiteBisect U4 mutant rows (SPEC-p1 assertion 6). Every find is cut from the generated Bisect.js sha256 43add0b5 and matches EXACTLY ONCE inside its fn span (export function <fn>( to the next export function or // END GENERATED); a regen that changes it makes the row NOT-APPLIED = FAIL (R3). Run: node test/mutant-run.mjs. Cut by .handoff/p1/evidence/u4-cut-mutants.mjs.",
+  "comment": "LiteBisect U4 mutant rows (SPEC-p1 assertion 6). Every find is cut from the generated Bisect.js sha256 43add0b5 (the nearest.tie-le.* and nearest.rounded-tie.* rows from the AU-R1a build sha256 10add825, audit 2026-11-11 B3) and matches EXACTLY ONCE inside its fn span (export function <fn>( to the next export function or // END GENERATED); a regen that changes it makes the row NOT-APPLIED = FAIL (R3). Run: node test/mutant-run.mjs. Cut by .handoff/p1/evidence/u4-cut-mutants.mjs.",
   "cutFrom": "43add0b5e6ea7841ac3efaec3abd4865843369138617764314a579692590c0a6",
   "rows": [
     {
@@ -117,9 +117,16 @@
     {
       "id": "nearest.tie-le.F64",
       "fn": "nearestF64",
-      "what": "nearest tie <= -> < (tie goes upper)",
-      "find": "x - a[i - 1] <= a[i] - x ? i - 1 : i",
-      "replace": "x - a[i - 1] < a[i] - x ? i - 1 : i"
+      "what": "nearest TwoSum tie-break > -> >= (a true tie goes upper)",
+      "find": "(x - (d - s)) - (p + s) > (q - (u - t)) - (x + t)",
+      "replace": "(x - (d - s)) - (p + s) >= (q - (u - t)) - (x + t)"
+    },
+    {
+      "id": "nearest.rounded-tie.F64",
+      "fn": "nearestF64",
+      "what": "nearest rounded tie reverted to lower (no TwoSum; killed by the oracle rounded-tie phase; U32 / U16 omitted: equivalent there)",
+      "find": "return i - ((!((x - (d - s)) - (p + s) > (q - (u - t)) - (x + t)) && p * 0.5 + q * 0.5 !== -Infinity) | 0);",
+      "replace": "return i - 1;"
     },
     {
       "id": "nearest.exact-lower.F64",
@@ -257,9 +264,16 @@
     {
       "id": "nearest.tie-le.F32",
       "fn": "nearestF32",
-      "what": "nearest tie <= -> < (tie goes upper)",
-      "find": "x - a[i - 1] <= a[i] - x ? i - 1 : i",
-      "replace": "x - a[i - 1] < a[i] - x ? i - 1 : i"
+      "what": "nearest TwoSum tie-break > -> >= (a true tie goes upper)",
+      "find": "(x - (d - s)) - (p + s) > (q - (u - t)) - (x + t)",
+      "replace": "(x - (d - s)) - (p + s) >= (q - (u - t)) - (x + t)"
+    },
+    {
+      "id": "nearest.rounded-tie.F32",
+      "fn": "nearestF32",
+      "what": "nearest rounded tie reverted to lower (no TwoSum; killed by the oracle rounded-tie phase; U32 / U16 omitted: equivalent there)",
+      "find": "return i - ((!((x - (d - s)) - (p + s) > (q - (u - t)) - (x + t)) && p * 0.5 + q * 0.5 !== -Infinity) | 0);",
+      "replace": "return i - 1;"
     },
     {
       "id": "nearest.exact-lower.F32",
@@ -397,9 +411,9 @@
     {
       "id": "nearest.tie-le.U32",
       "fn": "nearestU32",
-      "what": "nearest tie <= -> < (tie goes upper)",
-      "find": "x - a[i - 1] <= a[i] - x ? i - 1 : i",
-      "replace": "x - a[i - 1] < a[i] - x ? i - 1 : i"
+      "what": "nearest TwoSum tie-break > -> >= (a true tie goes upper)",
+      "find": "(x - (d - s)) - (p + s) > (q - (u - t)) - (x + t)",
+      "replace": "(x - (d - s)) - (p + s) >= (q - (u - t)) - (x + t)"
     },
     {
       "id": "nearest.exact-lower.U32",
@@ -537,9 +551,9 @@
     {
       "id": "nearest.tie-le.U16",
       "fn": "nearestU16",
-      "what": "nearest tie <= -> < (tie goes upper)",
-      "find": "x - a[i - 1] <= a[i] - x ? i - 1 : i",
-      "replace": "x - a[i - 1] < a[i] - x ? i - 1 : i"
+      "what": "nearest TwoSum tie-break > -> >= (a true tie goes upper)",
+      "find": "(x - (d - s)) - (p + s) > (q - (u - t)) - (x + t)",
+      "replace": "(x - (d - s)) - (p + s) >= (q - (u - t)) - (x + t)"
     },
     {
       "id": "nearest.exact-lower.U16",
@@ -677,9 +691,16 @@
     {
       "id": "nearest.tie-le.I32",
       "fn": "nearestI32",
-      "what": "nearest tie <= -> < (tie goes upper)",
-      "find": "x - a[i - 1] <= a[i] - x ? i - 1 : i",
-      "replace": "x - a[i - 1] < a[i] - x ? i - 1 : i"
+      "what": "nearest TwoSum tie-break > -> >= (a true tie goes upper)",
+      "find": "(x - (d - s)) - (p + s) > (q - (u - t)) - (x + t)",
+      "replace": "(x - (d - s)) - (p + s) >= (q - (u - t)) - (x + t)"
+    },
+    {
+      "id": "nearest.rounded-tie.I32",
+      "fn": "nearestI32",
+      "what": "nearest rounded tie reverted to lower (no TwoSum; killed by the oracle rounded-tie phase; U32 / U16 omitted: equivalent there)",
+      "find": "return i - ((!((x - (d - s)) - (p + s) > (q - (u - t)) - (x + t)) && p * 0.5 + q * 0.5 !== -Infinity) | 0);",
+      "replace": "return i - 1;"
     },
     {
       "id": "nearest.exact-lower.I32",

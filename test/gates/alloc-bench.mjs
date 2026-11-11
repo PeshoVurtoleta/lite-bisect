@@ -11,6 +11,10 @@
 // Query classes (LEDGER C2): smi = integer doubles in the Smi range, frac = smi + 0.5, big = integer
 // doubles >= 2^31 (not a Smi on Node's 32-bit Smi), nan = NaN. Every query is read from a Float64Array, so
 // the value stays a float64 in optimized code until it crosses a call V8 does not inline.
+// Hint classes (AU-R3, R-NANHINT-BOX), lowerBoundHint<T> only, Smi query (the smi class's queries):
+// nanhint = h read per op from a Float64Array filled with NaN (a non-Smi number across the call: one 16 B box
+// when the kernel is not inlined), nanlit = h is the literal NaN (a constant: no box in any tier). The test
+// names these extra classes itself and passes them to census().
 // State is allocated at import; a lane writes its Smi result to an Int32Array slot and allocates nothing.
 // Tier check (LEDGER law 8), only when LITE_BISECT_TIER_FILE names a file (needs --allow-natives-syntax):
 // at process exit the bench writes JSON { execArgv, ref: { on, off, maglev }, lanes: { name: status },
@@ -58,6 +62,7 @@ const QS_U32 = new Float64Array(QLEN), QF_U32 = new Float64Array(QLEN), QB_U32 =
 const QS_U16 = new Float64Array(QLEN), QF_U16 = new Float64Array(QLEN), QB_U16 = new Float64Array(QLEN), QN_U16 = new Float64Array(QLEN);
 const QS_I32 = new Float64Array(QLEN), QF_I32 = new Float64Array(QLEN), QB_I32 = new Float64Array(QLEN), QN_I32 = new Float64Array(QLEN);
 const H = new Int32Array(QLEN);
+const HN = new Float64Array(QLEN).fill(NaN);   // nanhint: a NaN hint read from a typed array (AU-R3)
 const OUT = new Int32Array(1);
 
 const Q = {
@@ -103,6 +108,8 @@ export const lanes = {
     'lowerBoundHintF64.frac': (i) => { OUT[0] = lowerBoundHintF64(A_F64, 0, LEN, QF_F64[i & QMASK], H[i & QMASK]); },
     'lowerBoundHintF64.big': (i) => { OUT[0] = lowerBoundHintF64(A_F64, 0, LEN, QB_F64[i & QMASK], H[i & QMASK]); },
     'lowerBoundHintF64.nan': (i) => { OUT[0] = lowerBoundHintF64(A_F64, 0, LEN, QN_F64[i & QMASK], H[i & QMASK]); },
+    'lowerBoundHintF64.nanhint': (i) => { OUT[0] = lowerBoundHintF64(A_F64, 0, LEN, QS_F64[i & QMASK], HN[i & QMASK]); },
+    'lowerBoundHintF64.nanlit': (i) => { OUT[0] = lowerBoundHintF64(A_F64, 0, LEN, QS_F64[i & QMASK], NaN); },
     'segmentF64.smi': (i) => { OUT[0] = segmentF64(A_F64, 0, LEN, QS_F64[i & QMASK]); },
     'segmentF64.frac': (i) => { OUT[0] = segmentF64(A_F64, 0, LEN, QF_F64[i & QMASK]); },
     'segmentF64.big': (i) => { OUT[0] = segmentF64(A_F64, 0, LEN, QB_F64[i & QMASK]); },
@@ -131,6 +138,8 @@ export const lanes = {
     'lowerBoundHintF32.frac': (i) => { OUT[0] = lowerBoundHintF32(A_F32, 0, LEN, QF_F32[i & QMASK], H[i & QMASK]); },
     'lowerBoundHintF32.big': (i) => { OUT[0] = lowerBoundHintF32(A_F32, 0, LEN, QB_F32[i & QMASK], H[i & QMASK]); },
     'lowerBoundHintF32.nan': (i) => { OUT[0] = lowerBoundHintF32(A_F32, 0, LEN, QN_F32[i & QMASK], H[i & QMASK]); },
+    'lowerBoundHintF32.nanhint': (i) => { OUT[0] = lowerBoundHintF32(A_F32, 0, LEN, QS_F32[i & QMASK], HN[i & QMASK]); },
+    'lowerBoundHintF32.nanlit': (i) => { OUT[0] = lowerBoundHintF32(A_F32, 0, LEN, QS_F32[i & QMASK], NaN); },
     'segmentF32.smi': (i) => { OUT[0] = segmentF32(A_F32, 0, LEN, QS_F32[i & QMASK]); },
     'segmentF32.frac': (i) => { OUT[0] = segmentF32(A_F32, 0, LEN, QF_F32[i & QMASK]); },
     'segmentF32.big': (i) => { OUT[0] = segmentF32(A_F32, 0, LEN, QB_F32[i & QMASK]); },
@@ -159,6 +168,8 @@ export const lanes = {
     'lowerBoundHintU32.frac': (i) => { OUT[0] = lowerBoundHintU32(A_U32, 0, LEN, QF_U32[i & QMASK], H[i & QMASK]); },
     'lowerBoundHintU32.big': (i) => { OUT[0] = lowerBoundHintU32(A_U32, 0, LEN, QB_U32[i & QMASK], H[i & QMASK]); },
     'lowerBoundHintU32.nan': (i) => { OUT[0] = lowerBoundHintU32(A_U32, 0, LEN, QN_U32[i & QMASK], H[i & QMASK]); },
+    'lowerBoundHintU32.nanhint': (i) => { OUT[0] = lowerBoundHintU32(A_U32, 0, LEN, QS_U32[i & QMASK], HN[i & QMASK]); },
+    'lowerBoundHintU32.nanlit': (i) => { OUT[0] = lowerBoundHintU32(A_U32, 0, LEN, QS_U32[i & QMASK], NaN); },
     'segmentU32.smi': (i) => { OUT[0] = segmentU32(A_U32, 0, LEN, QS_U32[i & QMASK]); },
     'segmentU32.frac': (i) => { OUT[0] = segmentU32(A_U32, 0, LEN, QF_U32[i & QMASK]); },
     'segmentU32.big': (i) => { OUT[0] = segmentU32(A_U32, 0, LEN, QB_U32[i & QMASK]); },
@@ -187,6 +198,8 @@ export const lanes = {
     'lowerBoundHintU16.frac': (i) => { OUT[0] = lowerBoundHintU16(A_U16, 0, LEN, QF_U16[i & QMASK], H[i & QMASK]); },
     'lowerBoundHintU16.big': (i) => { OUT[0] = lowerBoundHintU16(A_U16, 0, LEN, QB_U16[i & QMASK], H[i & QMASK]); },
     'lowerBoundHintU16.nan': (i) => { OUT[0] = lowerBoundHintU16(A_U16, 0, LEN, QN_U16[i & QMASK], H[i & QMASK]); },
+    'lowerBoundHintU16.nanhint': (i) => { OUT[0] = lowerBoundHintU16(A_U16, 0, LEN, QS_U16[i & QMASK], HN[i & QMASK]); },
+    'lowerBoundHintU16.nanlit': (i) => { OUT[0] = lowerBoundHintU16(A_U16, 0, LEN, QS_U16[i & QMASK], NaN); },
     'segmentU16.smi': (i) => { OUT[0] = segmentU16(A_U16, 0, LEN, QS_U16[i & QMASK]); },
     'segmentU16.frac': (i) => { OUT[0] = segmentU16(A_U16, 0, LEN, QF_U16[i & QMASK]); },
     'segmentU16.big': (i) => { OUT[0] = segmentU16(A_U16, 0, LEN, QB_U16[i & QMASK]); },
@@ -215,6 +228,8 @@ export const lanes = {
     'lowerBoundHintI32.frac': (i) => { OUT[0] = lowerBoundHintI32(A_I32, 0, LEN, QF_I32[i & QMASK], H[i & QMASK]); },
     'lowerBoundHintI32.big': (i) => { OUT[0] = lowerBoundHintI32(A_I32, 0, LEN, QB_I32[i & QMASK], H[i & QMASK]); },
     'lowerBoundHintI32.nan': (i) => { OUT[0] = lowerBoundHintI32(A_I32, 0, LEN, QN_I32[i & QMASK], H[i & QMASK]); },
+    'lowerBoundHintI32.nanhint': (i) => { OUT[0] = lowerBoundHintI32(A_I32, 0, LEN, QS_I32[i & QMASK], HN[i & QMASK]); },
+    'lowerBoundHintI32.nanlit': (i) => { OUT[0] = lowerBoundHintI32(A_I32, 0, LEN, QS_I32[i & QMASK], NaN); },
     'segmentI32.smi': (i) => { OUT[0] = segmentI32(A_I32, 0, LEN, QS_I32[i & QMASK]); },
     'segmentI32.frac': (i) => { OUT[0] = segmentI32(A_I32, 0, LEN, QF_I32[i & QMASK]); },
     'segmentI32.big': (i) => { OUT[0] = segmentI32(A_I32, 0, LEN, QB_I32[i & QMASK]); },
@@ -226,12 +241,17 @@ export const lanes = {
 };
 
 /**
- * Census: the expected lane names from oracle.mjs (KERNELS x TYPE_NAMES) x the CALLER's class list (the
- * test passes its own, so the expected set never comes from this file) vs the literal roster.
+ * Census: the expected lane names from oracle.mjs (KERNELS x TYPE_NAMES) x the CALLER's class list, plus the
+ * caller's per-kernel extra classes ({ kernel: [class, ...] }, a kernel outside KERNELS throws) x TYPE_NAMES
+ * (the test passes its own lists, so the expected set never comes from this file) vs the literal roster.
  */
-export function census(classes) {
+export function census(classes, extra = {}) {
     const expected = [];
     for (const k of Object.keys(KERNELS)) for (const t of TYPE_NAMES) for (const c of classes) expected.push(k + t + '.' + c);
+    for (const k of Object.keys(extra)) {
+        if (!Object.hasOwn(KERNELS, k)) throw new Error('census: extra classes for unknown kernel ' + k);
+        for (const t of TYPE_NAMES) for (const c of extra[k]) expected.push(k + t + '.' + c);
+    }
     return { expected: expected.sort(), got: Object.keys(lanes).sort() };
 }
 
