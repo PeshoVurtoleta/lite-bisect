@@ -1,6 +1,6 @@
 // test/torture.mjs -- the lite-bisect torture gate (SPEC-p1 U4, assertion 7). Run via
-// `npm run torture` (node --expose-gc --no-concurrent-recompilation --min-semi-space-size=1 --max-semi-space-size=1
-// test/torture.mjs).
+// `npm run torture` (node --expose-gc --no-concurrent-recompilation --single-threaded-gc --min-semi-space-size=1
+// --max-semi-space-size=1 test/torture.mjs).
 // Two phases, GC COUNTS only (the DETERMINISTIC tier): no timing threshold anywhere.
 // Semi-space pin (AU-R5): the run REFUSES before any lane -- prints
 // `torture: NO VERDICT -- run with --min-semi-space-size=1 --max-semi-space-size=1` and exits 2 -- unless
@@ -10,6 +10,12 @@
 // --minor-ms (the AU-R5b class-3 refusal: its young GCs are a kind the profiler does not count). Pinned to 1 MB, a 16 B/op box over a
 // 200,000-op lane (3.2 MB) must scavenge, so steady maxMinor 0 sees it; unpinned, new space grows and a
 // 16 B/op plant passes (cross-opus, audit 2026-11-11). Exit codes: 0 ok, 1 FAIL, 2 NO VERDICT.
+// GC pin (P3-R10, LEDGER B11), checked second, also before the import: the run REFUSES with
+// `torture: NO VERDICT -- run with --single-threaded-gc` (exit 2) unless the LAST execArgv entry spelling that flag
+// (one or two dashes, '-' or '_', a no / no- / no_ prefix, any =value) is exactly --single-threaded-gc. Without it
+// the concurrent sweeper may not yet have swept dead code / bytecode when the settled "before" heapUsed is read on a
+// loaded host, and the next lane credits it as -1 .. -2 B/op retained: a flaky floor and a fail-open band
+// (0 / 240 vs 12 / 180 contended runs, CI-TRIAGE class 2).
 // --no-concurrent-recompilation (B3 finding, not refused here): with concurrent TurboFan jobs a loaded host
 // leaves a lane in a non-inlining tier past its 20,000-op warm-up, the fractional / NaN queries box across
 // the kernel call and the CLEAN build reads steady minor 1..8 (16 / 16 runs FAILED with 8 tortures in
@@ -70,6 +76,12 @@ const PIN_FLAGS = ['--min-semi-space-size=1', '--max-semi-space-size=1'];
 const SEMI = process.execArgv.filter((f) => /^--?(min|max)[-_]semi[-_]space[-_]size/.test(f));
 if (SEMI.length !== 2 || !PIN_FLAGS.every((f) => SEMI.includes(f)) || process.execArgv.some((f) => /^--?minor[-_]ms/.test(f))) {
     console.error('torture: NO VERDICT -- run with --min-semi-space-size=1 --max-semi-space-size=1');
+    process.exit(2);
+}
+// P3-R10: concurrent sweeping off (V8 takes the LAST spelling of a flag; a later negation re-enables it).
+const SGC = process.execArgv.filter((f) => /^--?(no[-_]?)?single[-_]threaded[-_]gc(=.*)?$/.test(f));
+if (SGC.length === 0 || SGC[SGC.length - 1] !== '--single-threaded-gc') {
+    console.error('torture: NO VERDICT -- run with --single-threaded-gc');
     process.exit(2);
 }
 

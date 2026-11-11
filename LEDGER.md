@@ -366,7 +366,7 @@ on these kernels. No single green gate authorises a release.
 - **Law:** 9. Fix: steady `{ maxMajor: 0, maxMinor: 0 }`; `npm run torture` passes --no-concurrent-recompilation
   --min-semi-space-size=1 --max-semi-space-size=1 (AU-R5a "Accept the flag (Recommended)": without the tier flag the
   clean build failed under load, 16 / 16 parallel runs exit 1, minor 1..8, concurrent TurboFan left lanes un-inlined;
-  NO VERDICT still checks only the two semi-space flags); torture.mjs prints `torture: NO VERDICT` and exits 2 without
+  NO VERDICT still checks only the two semi-space flags; B11 adds --single-threaded-gc); torture.mjs prints `torture: NO VERDICT` and exits 2 without
   both flags; a must-fail 16 B/op plant (and a `{ x }` plant) exits 1; the audited build must exit 0.
 - **Gate:** `npm run torture`. Reopens with: a pinned run with minor > 0 on an unchanged kernel (a test bug), or an
   allocation gate in `npm test` that makes this redundant.
@@ -386,6 +386,42 @@ on these kernels. No single green gate authorises a release.
   text and the pointer sentence are in Bisect.d.ts and README.
 - **Gate:** test/Bisect.docs.test.mjs rows bare / cite / speed and the llms.txt snippet row, each with planted
   controls through docsProblems (B7). Reopens with: a doc claim in a file no row loops over.
+
+### B11. Concurrent sweeping under load moved the torture's retained term below its floor *(FOUND 2026-11-11, first hosted CI run; RULED P3-R10 "Flag + NO VERDICT refusal (Recommended)")*
+- **What happened:** hosted ci.yml runs 43102263215 / 43102509190 (node 26.8.2, ubuntu + macos): torture-controls
+  (a) / (b) failed because one UNPLANTED lane, a different one each time, read major 0 minor 0 and retained -1.083 /
+  -1.384 / -1.518 B/op, below the -1.0 floor. Locally (Apple M4 Pro, node v26.8.2, 6 children on efficiency cores,
+  load1 4.6 .. 18.3 from other sessions over the triage, 10.9 .. 18.3 in the arms logs, untimed): the CLEAN build
+  exited 1 in 4 / 60 contended runs; the three arms with no extra flag (box, CLEAN, instrumented box) 12 / 180 runs
+  with an unplanted FAIL (16 / 300 with the --no-memory-reducer / --no-flush-bytecode arms); with --single-threaded-gc
+  0 / 240 (Fisher one-sided p = 3.1e-5 on 12 / 180; 6.9e-5 on 16 / 300).
+  Standalone `npm run torture` on idle runners never tripped (5 / 5, 0.001 .. 0.047 B/op).
+- **Root cause:** the settled "before" sample (two forced GCs) read heapUsed while CONCURRENT sweeper threads had not
+  yet swept dead code / bytecode; starved, they finished inside the next 200,000-op window: per-space deltas of a
+  failing lane, code_space -244,832 / -156,672 B, old_space -181,480 B, trusted_space -64,576 B. Not the memory
+  reducer (3 / 60) nor bytecode flushing (1 / 60). A DETERMINISTIC-tier flake is a test bug; it is also fail-open:
+  a -1 .. -2 B/op credit can hide a lane retaining 1 .. 2 B/op inside (-1.0, 1.0).
+- **Evidence:** .handoff/p3/CI-TRIAGE.md; .handoff/p3/evidence/arms.log, arms2.log, arm.mjs.
+- **Law:** 9, and I7 (load moved a gate that looked deterministic: here a GC helper thread moved the gate's own
+  settled sample). Fix: `npm run torture` passes --single-threaded-gc; torture.mjs prints `torture: NO VERDICT -- run with
+  --single-threaded-gc` and exits 2 without it (or when a later spelling negates it).
+- **Gate:** test/Bisect.torture-controls.test.mjs (c2) refusal rows (fail on the old torture.mjs: it imports the
+  build and exits 1); `npm run torture`. Reopens with: an unplanted lane FAIL under --single-threaded-gc on an
+  unchanged kernel (a test bug), or a V8 that sweeps concurrently under that flag.
+
+### B12. The inline control a1 aborted V8 12.4 / 13.6 *(FOUND 2026-11-11, first hosted CI run; RULED P3-R9 "Driver fix, 2 lines (Recommended)")*
+- **What happened:** test/Bisect.inline.test.mjs "control a1" failed on every node 22 / 24 leg (both OS) with
+  `driver killed by SIGTRAP`; node 26 passed. The driver planted a caller with %NeverOptimizeFunction, then still
+  called %PrepareFunctionForOptimization and %OptimizeFunctionOnNextCall on it.
+- **Root cause:** V8 12.4.254.21 (node v22.23.5) and 13.6.233.17 (v24.22.3) treat either call on an
+  optimization-disabled function as fuzzer-only misuse: `Check failed: v8_flags.fuzzing`, exit 133. V8 14 ignores it.
+  The control was only ever run on node 26 before CI (NEXT.md watch item "node 22 / 24 legs never ran here").
+- **Evidence:** .handoff/p3/CI-TRIAGE.md; .handoff/p3/evidence/a1/ (local abort logs, official darwin-arm64 binaries,
+  sha256 checked).
+- **Law:** 3 (EXPECTED engine behaviour is not TRACED: a %-call contract checked on one V8 only). Fix: the driver
+  skips both calls for the never-opt caller; same verdict() path.
+- **Gate:** the hosted node 22 / 24 legs of ci.yml; local revert check (old driver SIGTRAPs on v22 / v24). Reopens
+  with: a supported Node whose V8 aborts on %NeverOptimizeFunction itself.
 
 ---
 

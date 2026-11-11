@@ -310,7 +310,7 @@ Tree-shaking is gated under esbuild 0.28 only (`test/Bisect.shake.test.mjs`, det
 
 ```bash
 npm test               # oracle, boundary, mutants, golden parity, gen check, inline pin, types, doc truth, tree-shaking
-npm run torture        # node --expose-gc --no-concurrent-recompilation --min-semi-space-size=1 --max-semi-space-size=1 test/torture.mjs : leak + retained-heap + steady-minor gate
+npm run torture        # node --expose-gc --no-concurrent-recompilation --single-threaded-gc --min-semi-space-size=1 --max-semi-space-size=1 test/torture.mjs : leak + retained-heap + steady-minor gate, and NO VERDICT without --single-threaded-gc (concurrent sweeping made the retained term flaky under load)
 npm run coverage       # c8, 100% lines and branches required
 npm run test:types     # tsc in node16 / nodenext / bundler resolution + export parity
 npm run gen:check      # the generated kernel region matches its template

@@ -302,6 +302,22 @@ Not chosen (LEDGER A7): 12 legs with ubuntu-24.04-arm; 6 legs with no pinned leg
 torture only; a job that checks out the LiteUtils repo now (would reopen P1-R1); a schedule trigger inside ci.yml; no
 nightly yet; full commit-SHA pins; `npm install`; push to main only.
 
+## 5e. P3 CI-fix rulings (maintainer, 2026-11-12, P3 CI-fix burst unit 2)
+
+The first two hosted ci.yml runs (43102263215, 43102509190; tree bcc2ad61) were RED in two classes; triage
+`.handoff/p3/CI-TRIAGE.md` (cause, local reproduction, options). Asked in one AskUserQuestion sitting; both answered. Quoted:
+
+| Id | Question | Ruling | Means |
+|---|---|---|---|
+| P3-R9 | class 1: inline control a1 SIGTRAP on node 22 / 24 (V8 12.4 / 13.6 `Check failed: v8_flags.fuzzing` on Prepare / OptimizeOnNextCall after NeverOptimize) | "Driver fix, 2 lines (Recommended)" | inline-driver.mjs skips %PrepareFunctionForOptimization and %OptimizeFunctionOnNextCall for the planted never-opt caller only; a1 stays live on all 8 legs through the same verdict() path; gate failing on the old code: the hosted node 22 / 24 legs + a local revert check with the official v22 / v24 binaries; LEDGER B12 |
+| P3-R10 | class 2: an unplanted torture lane trips the retained floor under CPU contention (concurrent sweeper; clean build 4 / 60 contended runs exit 1) | "Flag + NO VERDICT refusal (Recommended)" | `npm run torture` adds --single-threaded-gc; torture.mjs refuses (exit 2, NO VERDICT) unless execArgv carries it, also refusing a later --no-single-threaded-gc and one-dash / '_' spellings (as AU-R5 / R5b); the controls test passes it and gains (c) rows for flag missing / overridden -> exit 2 (these fail on the old code); controls (a) / (b) keep strict attribution; README / CHANGELOG / torture header updated; LEDGER B11 |
+
+Not chosen: class 1 -- the driver fix plus a static source row; a1 as a node:test SKIP off the pinned Node (a1 on 2
+of 8 legs, assertion 8 uncontrolled elsewhere; law 9); `--fuzzing` (offered in the triage, not asked: it changes
+every %-call's misuse behaviour). Class 2 -- the flag with no refusal (a run without it can credit away 1-2 B/op of
+retention: fail-open, unlike AU-R5a's tier flag); settle-until-stable (timing-dependent); serializing the controls
+file only (mitigation; the clean gate still flakes); widening the floor (offered in the triage, not asked).
+
 ## 6. Verification plan, by tier
 
 - **DETERMINISTIC (`npm test`):**

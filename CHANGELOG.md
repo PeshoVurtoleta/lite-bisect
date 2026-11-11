@@ -47,8 +47,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   expression; they now decide with exact integer arithmetic, backed by an exact-reference fuzz with a
   coverage floor of false rounded ties.
 - R-TORTURE-MINOR: the torture now gates steady minor GCs (0) with a pinned 1 MB semi-space
-  (`--expose-gc --no-concurrent-recompilation --min-semi-space-size=1 --max-semi-space-size=1`); it prints
-  NO VERDICT and exits 2 without the two semi-space flags, and a must-fail 16 B/op plant exits 1.
+  (`--expose-gc --no-concurrent-recompilation --single-threaded-gc --min-semi-space-size=1 --max-semi-space-size=1`);
+  it prints NO VERDICT and exits 2 without the two semi-space flags, and NO VERDICT without --single-threaded-gc
+  (concurrent sweeping made the retained term flaky under load); a must-fail 16 B/op plant exits 1.
 - R-LLMS-SNIPPETS: the `llms.txt` usage results are checked `// -> n` lines; the docs test runs the
   `llms.txt` js fences and fails on a bare `// <number>` result comment in README / `llms.txt`.
 

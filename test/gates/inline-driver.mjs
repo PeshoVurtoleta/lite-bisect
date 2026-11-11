@@ -14,8 +14,11 @@
 // may interleave out of order: the test matches trace lines by NAME (callee and caller SFI
 // names are unique per row), never by position.
 // Controls (the test's revert checks): --never-opt <caller> plants a caller that never reaches
-// TurboFan; --no-inline <kernel> plants a kernel that cannot inline (%NeverOptimizeFunction
-// disables optimization of the SFI, which V8's inlining heuristic refuses).
+// TurboFan; that caller gets neither %PrepareFunctionForOptimization nor %OptimizeFunctionOnNextCall
+// (same warm loop, same final call): V8 12.4 / 13.6 (node 22 / 24) abort with
+// "Check failed: v8_flags.fuzzing" (SIGTRAP) on either call after %NeverOptimizeFunction, V8 14
+// ignores it (P3-R9, CI-TRIAGE class 1). --no-inline <kernel> plants a kernel that cannot inline
+// (%NeverOptimizeFunction disables optimization of the SFI, which V8's inlining heuristic refuses).
 
 import { writeSync } from 'node:fs';
 import {
@@ -171,14 +174,14 @@ for (const t of Object.keys(CALLERS)) {
         const name = fn.name;
         if (noInline !== null && kernels[r].name === noInline) %NeverOptimizeFunction(kernels[r]);
         if (neverOpt === name) %NeverOptimizeFunction(fn);
-        %PrepareFunctionForOptimization(fn);
+        if (neverOpt !== name) %PrepareFunctionForOptimization(fn);
         for (let w = 0; w < WARM; w++) {
             for (let k = 0; k < Q; k++) {
                 // h walks the whole [0, N] range so the hint takes both gallops and both inner sites
                 sink += fn(a, q[k], (k * 5 + w * 7) % (N + 1));
             }
         }
-        %OptimizeFunctionOnNextCall(fn);
+        if (neverOpt !== name) %OptimizeFunctionOnNextCall(fn);
         sink += fn(a, q[3], 0);
         out('ROW ' + name + ' status=' + %GetOptimizationStatus(fn));
         rows++;
