@@ -305,6 +305,22 @@ on these kernels. No single green gate authorises a release.
 - **Law:** 9. **Gate:** `npm run gates:local` controls. Reopens with: a checker that reads a tool value without a
   type check.
 
+### B7. The types / docs controls judged one category or one string, not the row's verdict loop *(FOUND 2026-11-11, P1 U7 review r1; FIX r2)*
+- **What happened:** test/types.exports.test.mjs judged each .d.ts mutant by reading `r[category]` from the compare
+  function, while the real row passes on a separate `CATEGORIES` loop; dropping 'returns' or 'missing' from that loop
+  kept 15 / 15 green, and with 'returns' dropped a .d.ts declaring `segmentI32(...): any` passed every gate (tsc
+  accepts `r += any`). The returns / params / union checks had no control. test/docs/docs.test.mjs ran its controls on
+  bare predicates over hand-written strings; the real rows loop over file lists, so `NAME_FILES = ['README.md']` (llms.txt
+  never checked) and TOKEN_FILES without CHANGELOG.md kept every control green.
+- **Root cause:** the B5 shape a third time -- a control fed to the predicate (or one category of its result) proves the
+  predicate, not the verdict line and the file / category list the real row iterates.
+- **Evidence:** .handoff/p1/review-u7/VERDICT-r1.md (reviewer survivors, harness in the burst scratchpad); fix
+  round r2 logs .handoff/p1/evidence/u7r2-*.log.
+- **Law:** 9. Lesson for every later gate: the verdict is a function (`failing(r)`, `docsProblems(texts)`) that the
+  real row and every control call alike, and each list the real row iterates gets one control per member.
+- **Gate:** `npm test` (types.exports) and test/docs/docs.test.mjs controls. Reopens with: a gate whose controls do not
+  go through the same verdict function and list as its real row.
+
 ---
 
 ## C. Measurement lessons (this package's own runs)
