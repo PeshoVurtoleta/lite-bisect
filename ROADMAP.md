@@ -252,6 +252,7 @@ The program spec is `.handoff/p1/SPEC-p1.md` (gitignored). Rulings, quoted:
 | P1-R7 | "Follow the B1 NaN contract (Recommended)" | NaN query: `nearest` -> lo, `segment` -> lo - 1; an exact match (+-Infinity included) wins; past either end -> lo or hi - 1; tie -> LOWER index |
 | P1-R8 | "Cap at 2^30 - 1 (Recommended)" | Q-GUARD's cap becomes hi - lo <= 2^30 - 1: `assertRange` throws RangeError at 2^30, because the frozen hint body never returns there (LEDGER B2); no hot byte changes |
 | P1-R9 | "Caller error, documented (Recommended)" | `lowerBoundHint`'s h must be an integer index or NaN (NaN -> lo; outside [lo, hi] clamped); a non-integer h is a caller error that may return a wrong index or never return (the frozen body hangs on h = 10.5), like a non-integer range; documented in the Bisect.js header and the .d.ts JSDoc; no hot bytes, no new export, no cold check (asked 2026-11-11 in the P1 coder burst after the U2 review) |
+| P1-R10 | "R < 1.0 B/op (Recommended)" | The torture gates the retained heap per 200,000-op lane: every lane reads retained < 1.0 B/op (head read 0.071..0.107 over 5 runs), plus a must-fail control lane that retains one small on-heap object per op; deterministic tier, in `npm run torture` (asked 2026-11-11 in P1 coder burst 2 after the U4 review found the channel measured but never gated, LEDGER B4) |
 
 Planner details settled in the spec (not rulings): 37 exports, `<kernel><T>` suffix names with T in F64 / F32 / U32 /
 U16 / I32; `segment` and `nearest` are per-type (a shared wrapper would need a type dispatch, refused by Q-FRONT, and
@@ -314,6 +315,14 @@ lite-utils devDependency line is deferred. Section 6's "2^30 cap" means hi - lo 
 - **P1 package:** the kernels that survived P0, per element type, plus node:test and the
   0 B/op gate. `Bisect.draft.js` is never shipped as is. `@zakkster/lite-utils` `^1.0.0` is
   a devDependency and the tools are called through its bins (Q-LU-1, Q-LU-1a, section 9).
+- **P1 final audit (maintainer, 2026-11-11):** "one dual final review - fable 5.2 high and
+  opus 5.5 high, as the rules say, and one session to confirm all the findings + fix. See
+  lite-utils workflow". After P1 qa, before `/release 1.0.0`; modeled on LiteUtils ROADMAP
+  Phase 7 and its 2026-11-09 audit. Session A: snapshot + two independent reviewers (Opus 5.5
+  high, Fable 5.2 high) + orchestrator spot-check of every reproduction. Session B: each
+  finding cross-checked by the other model, maintainer rulings in one sitting, fixes through
+  the pipeline (each reproduction becomes a test that fails on the audited build), then every
+  reproduction re-run on the candidate. Untimed. Plan: `.handoff/PLAN-final-audit.md`.
 - **P2 adoption, one package at a time, highest value first:**
   - LogN SortedArray / MergeSortTree / WaveletTree (9 sites, Float64Array, mostly reads);
   - then the per-frame sites (Keyframe, MotionPath, Scrollforge, Virtual) if R-2 wins.

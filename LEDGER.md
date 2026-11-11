@@ -260,6 +260,21 @@ on these kernels. No single green gate authorises a release.
 - **Gate:** none (a caller error is documented, not checked); the Bisect.js header and the .d.ts JSDoc state it (U2,
   U7). Reopens with: a hint body edit, a cold check for h, or a consumer that derives h from a double.
 
+### B4. The torture measured retained heap per lane and never gated it *(FOUND 2026-11-11, P1 U4 review; RULED P1-R10)*
+- **What happened:** U4's test/torture.mjs computed a retained-heap B/op per 200,000-op lane and printed it as
+  `alloc=`, but each lane's verdict read only steady major GCs and arrayBuffers growth. A planted lowerBoundBranchyF64
+  that keeps one `{ lo, hi }` per call printed `retainedB/op=48.936 ok` and the torture exited 0. A short-lived
+  3-element array per call printed `alloc=0.081 B/op`: the label named allocation, the number was retention.
+- **Root cause:** a measured channel with no threshold and no must-fail control; on-heap retention within one
+  window moves neither major GCs nor arrayBuffers, and phase 1 proves only that the tracked arrays die.
+- **Evidence:** U4 review (P1 coder burst 2), planted kernels in the reviewer's scratchpad; parked U4 torture.mjs
+  018d72e9 (.handoff/rejected/U4); head read 0.071..0.107 B/op over 5 runs (node v26.8.2, host loaded, untimed).
+- **Law:** 9 (a gate fails open until a control proves it closed). Fix: P1-R10 "R < 1.0 B/op (Recommended)": every
+  lane gates retained < 1.0 B/op, a control lane retaining one small object per op must trip it, the label reads
+  `retained=`. Allocation (short-lived) stays U6's alloc-per-op lanes.
+- **Gate:** `npm run torture` (U4, after the fix). Reopens with: a lane reading >= 1.0 B/op on an unchanged kernel
+  (flake = a test bug), or U6 lanes that make the torture channel redundant.
+
 ---
 
 ## C. Measurement lessons (this package's own runs)

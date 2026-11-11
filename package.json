@@ -26,7 +26,8 @@
   ],
   "scripts": {
     "gen": "node scripts/gen.mjs",
-    "gen:check": "node scripts/gen.mjs --check"
+    "gen:check": "node scripts/gen.mjs --check",
+    "test": "node --test \"test/*.test.mjs\""
   },
   "keywords": [
     "binary-search",
