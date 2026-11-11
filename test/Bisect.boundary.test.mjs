@@ -178,6 +178,10 @@ test('assertRange caller-error rows: RangeError, never TypeError; valid ranges r
     for (const [lo, hi] of [[0, 0], [2, 2], [4, 4], [1, 3], [0, 4]]) {
         assert.equal(ar(a, lo, hi), undefined, 'assertRange(' + lo + ', ' + hi + ')');
     }
+    // Non-number lo / hi / a.length: the message reports typeof, never String() (RangeError, not TypeError).
+    assert.throws(() => ar(a, Object.create(null), 2), RangeError, 'assertRange(null-proto object, 2)');
+    assert.throws(() => ar(a, 0, Symbol('s')), RangeError, 'assertRange(0, Symbol)');
+    assert.throws(() => ar({ length: 'x' }, 0, 1), RangeError, "assertRange({ length: 'x' }, 0, 1)");
     for (const T of ALL) assert.equal(ar(new TYPES[T](3), 0, 3), undefined, T);
 });
 

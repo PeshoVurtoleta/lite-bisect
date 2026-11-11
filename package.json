@@ -27,7 +27,9 @@
   "scripts": {
     "gen": "node scripts/gen.mjs",
     "gen:check": "node scripts/gen.mjs --check",
-    "test": "node --test \"test/*.test.mjs\""
+    "test": "node --test \"test/*.test.mjs\"",
+    "torture": "node --expose-gc test/torture.mjs",
+    "coverage": "c8 --include=Bisect.js --temp-directory node_modules/.c8/tmp --report-dir node_modules/.c8/report --reporter=text --reporter=text-summary --check-coverage --lines 100 --branches 100 node --test \"test/!(*.inline|*.mutants).test.mjs\""
   },
   "keywords": [
     "binary-search",
@@ -45,5 +47,11 @@
     "node": ">=22"
   },
   "sideEffects": false,
-  "dependencies": {}
+  "dependencies": {},
+  "devDependencies": {
+    "@zakkster/lite-gc-profiler": "^1.16.0",
+    "@zakkster/lite-leak": "^1.10.0",
+    "@zakkster/lite-signal": "^1.5.2",
+    "c8": "^12.0.0"
+  }
 }

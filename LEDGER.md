@@ -275,6 +275,24 @@ on these kernels. No single green gate authorises a release.
 - **Gate:** `npm run torture` (U4, after the fix). Reopens with: a lane reading >= 1.0 B/op on an unchanged kernel
   (flake = a test bug), or U6 lanes that make the torture channel redundant.
 
+### B5. The B4 control proved the predicate, then the wrong bound, not the lanes *(FOUND 2026-11-11, P1 U4 review r2 / r3; FIXED r4)*
+- **What happened:** the first P1-R10 fix judged its must-fail retain control by calling `laneOk(true, bpo)`
+  outside the lane loop. A mutant restoring the GC-only lane verdict kept every control green, and a planted
+  kernel retaining one Smi per call printed `retained=8.961 B/op | ok`, exit 0 -- B4 again. The fix (control row
+  run through the lane loop's own verdict line) plus a new floor (`bpo > -1.0`) then let the control count as
+  "flagged" when its reading fell BELOW the floor: a sink cleared at the last op read -4.914 B/op and passed.
+- **Root cause:** a control that calls the predicate proves the predicate, not the verdict path the lanes take;
+  and "the control failed" is not "the control failed for the reason it exists" once a gate has two bounds.
+- **Evidence:** .handoff/p1/review-u4r2/VERDICT-r2.md (r2 and r3 mutants tm3, n5, n6p), .handoff/p1/evidence/
+  u4r3-*.log, u4r4-*.log; final test/torture.mjs 35d0b056: the retain row runs through
+  `const ok = laneOk(mustTrip === true || gcPass(m), bpo)` and counts as flagged only when `bpo >= 1.0`.
+- **Law:** 9 (a control must fail on that row alone, and for its own reason). Carried open: a near-bar control
+  (~1.5 B/op) would pin the 1.0 threshold itself (one object per op pins it only below ~49 B/op; P1-R10 names one
+  object per op, so adding it is a ruling); two-change bypasses (separate verdict branches for control and lanes)
+  are outside what one control can catch.
+- **Gate:** `npm run torture` revert checks r1-r5 / f1 / f5 / fn. Reopens with: any edit to the lane verdict line
+  or laneOk that the retain control does not fail.
+
 ---
 
 ## C. Measurement lessons (this package's own runs)
