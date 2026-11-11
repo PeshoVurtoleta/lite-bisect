@@ -1,0 +1,109 @@
+# ci.yml -- lite-bisect per-push / per-PR gate (P3 burst 1; rulings P3-R2, P3-R3, P3-R6, P3-R7, P3-R8).
+# DETERMINISTIC tier only (ROADMAP 6): no quiet lock exists on hosted runners and no step here is timed.
+# P3-R2 matrix: ubuntu-latest (x86) / macos-latest (arm64) x node 22 / 24 / 26, plus one node 26.8.2 leg per OS so
+# test/Bisect.inline.test.mjs M4 runs (it skips with 'M4 NO VERDICT' on any other node). A red 26.8.2 leg is a
+# finding to rule; no step or job is allowed to continue on error.
+# P3-R3: npm test + npm run torture on every leg (the package script owns the pinned node flags); coverage + size
+# run once, in the separate `coverage-size` job (ubuntu-latest, node 26), never behind a matrix `if:`.
+# P3-R4: no LiteUtils `gates` job and no stub (P1-R1: hosted CI only after LiteUtils 1.0 is on npm).
+# Shallow checkout is fine: no test shells out to git.
+# SYNC: the `test` job steps match nightly.yml's except the ci-only 26.8.2 pin guard and nightly's setup-node
+# check-latest; keep the two in sync.
+# Watch on the first run: the coverage script's "test/!(*.inline|*.mutants).test.mjs" extglob goes to node --test
+# (verified locally on node 26.8.2 only); torture's steady-minor-0 and NO VERDICT pins are untried on hosted runners.
+
+name: ci
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# a main run gets its own group (run_id): one pending run per group would let a newer main run cancel a queued one
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    # 30: a first guess; re-size from the first run's wall times
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: ['22', '24', '26']
+        include:
+          - os: ubuntu-latest
+            node: '26.8.2'
+          - os: macos-latest
+            node: '26.8.2'
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: setup node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - name: provenance
+        run: |
+          node --version
+          npm --version
+          node -p "process.arch + ' ' + process.versions.v8"
+          uname -a
+      # fail the leg if setup-node resolved anything but the pin, or the pin drifted from the test's PINNED_NODE
+      - name: node is exactly the M4 pin
+        if: matrix.node == '26.8.2'
+        env:
+          PIN: ${{ matrix.node }}
+        run: |
+          test "$PIN" = 26.8.2
+          test "$(node --version)" = "v$PIN"
+          grep -q "^const PINNED_NODE = 'v$PIN';" test/Bisect.inline.test.mjs
+      - name: npm ci
+        run: npm ci
+      - name: npm test
+        run: npm test
+      - name: npm run torture
+        run: npm run torture
+
+  coverage-size:
+    name: coverage + size (ubuntu-latest, node 26)
+    runs-on: ubuntu-latest
+    # 30: a first guess; re-size from the first run's wall times
+    timeout-minutes: 30
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: setup node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '26'
+          cache: npm
+      - name: provenance
+        run: |
+          node --version
+          npm --version
+          node -p "process.arch + ' ' + process.versions.v8"
+          uname -a
+      - name: npm ci
+        run: npm ci
+      - name: npm run coverage
+        run: npm run coverage
+      - name: npm run size
+        run: npm run size

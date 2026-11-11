@@ -281,6 +281,27 @@ Asked 2026-11-11 in P1 final audit Session B (B2), one AskUserQuestion sitting a
 | AU-R6 | R-RESEARCH-REF | "Pointer sentence + docs row (Recommended)" | keep the citations; one pointer sentence in README and llms.txt (LEDGER / RESEARCH ids live in the source repository, not the tarball); a docs row with a planted-citation control; llms.txt:60-61 untouched (D1); no package.json change |
 | AU-R7 | R-DTS-TIER | "Tiered warning (Recommended)" | d.ts x5: "on incoherent streams it can be slower than lowerBoundBranchless* (PRELIMINARY, one CPU; no timing lane gated)"; a docs row fails on an untiered d.ts slower / faster sentence |
 
+## 5d. P3 CI rulings (maintainer, 2026-11-11, P3 burst 1 unit 1)
+
+Asked 2026-11-11 in P3 burst 1 (two AskUserQuestion calls, one sitting); all answered. They settle section 7's "owner
+open" and resize its sketch. The workflows are `.github/workflows/ci.yml` and `nightly.yml` in this repository. Quoted:
+
+| Id | Question | Ruling | Means |
+|---|---|---|---|
+| P3-R2 | matrix | "8 legs, as LiteUtils (Recommended)" | ubuntu-latest (x86) + macos-latest (arm64) x node 22 / 24 / 26, plus one node 26.8.2 leg per OS so the pinned M4 inline control runs in CI; M4 was traced only on Apple M4 Pro, so a red 26.8.2 ubuntu leg is a finding to rule, never continue-on-error |
+| P3-R3 | steps per leg | "test+torture all, cov+size once (Recommended)" | `npm test` and `npm run torture` (the script owns the pinned flags) on every leg; `npm run coverage` and `npm run size` once, on ubuntu-latest node 26 (CPU-independent; size reads that leg's npm pack); no continue-on-error |
+| P3-R4 | LiteUtils `gates` job | "Nothing now; later unit (Recommended)" | no gates job and no stub until LiteUtils 1.0 is on npm (P1-R1); NEXT.md carries a "gates CI job" unit (lite-utils devDep, then a job running `npm run gates`) that blocks `/release 1.0.0` |
+| P3-R5 | nightly | "Separate nightly.yml (Recommended)" | `.github/workflows/nightly.yml`: daily cron + workflow_dispatch, the same DETERMINISTIC steps as ci.yml on node 'latest' (check-latest) and '22' x ubuntu-latest / macos-latest; never a required check; the STATISTICAL A/B lane joins later, from its ruled PROPOSAL |
+| P3-R5a | which nightly counts toward section 8 P3 "CI nightly green for a week" (asked in chat 2026-11-11 after the burst; the P3-R5 question text assumed nightly.yml, no ruling text said so) | "I agree" (to the orchestrator's recommendation) | the week = 7 consecutive green runs of the DETERMINISTIC `nightly.yml` only; the STATISTICAL A/B is gated ONCE per release by one release-gating run on x86 AND arm64 that passes its own controls (A/A band, must-fail SLOW control), never by a streak; any nightly A/B run is REPORTED evidence only and gates nothing. Not chosen: the A/B lane counting toward the week (a timing streak multiplies the false-red rate by ~7 on hosted runners and turns the once-per-release verdict into a streak); both lanes counting |
+| P3-R6 | action pinning | "Major tags @v7, as the suite (Recommended)" | actions/checkout@v7 + actions/setup-node@v7, `permissions: contents: read`, `persist-credentials: false`; same as LiteUtils / LiteSignal (one suite-wide bump); full-SHA pins not chosen |
+| P3-R7 | install | "npm ci + npm cache (Recommended)" | `npm ci` from the committed lockfile with setup-node `cache: npm`; a lockfile drift fails the job |
+| P3-R7a | P3-R7 re-ask (its premise was wrong: `.gitignore` ignored package-lock.json; LEDGER D3) | "Commit the lockfile (Recommended)" | `/package-lock.json` leaves `.gitignore` and the existing lockfile (v3, registry.npmjs.org only, linux-x64 / linux-arm64 / darwin-arm64 esbuild + typescript binaries) is committed; P3-R7 stands as ruled (LiteSignal precedent); not chosen: the gitignored-lockfile suite norm (`npm install --no-audit --no-fund`, no cache) |
+| P3-R8 | triggers | "push + PR + dispatch (Recommended)" | on push (every branch), pull_request, workflow_dispatch; concurrency cancels superseded runs except on main; timeout-minutes 30 per job, re-sized from the first run's wall times |
+
+Not chosen (LEDGER A7): 12 legs with ubuntu-24.04-arm; 6 legs with no pinned leg; every step on every leg; test +
+torture only; a job that checks out the LiteUtils repo now (would reopen P1-R1); a schedule trigger inside ci.yml; no
+nightly yet; full commit-SHA pins; `npm install`; push to main only.
+
 ## 6. Verification plan, by tier
 
 - **DETERMINISTIC (`npm test`):**
@@ -318,9 +339,13 @@ Asked 2026-11-11 in P1 final audit Session B (B2), one AskUserQuestion sitting a
 
 ## 7. CI (sketch; the timing lane matters more here than for most packages)
 
-- **Every push:** `npm test` (DETERMINISTIC), Node 22 / 24 / 26; plus the types-compat
-  fixture and the packed-size budget (lite-pick review).
-- **Nightly:** the STATISTICAL lane on ubuntu-latest (x86) AND macos-latest (arm64). R-10 is the
+Ruled 2026-11-11 (section 5d, P3-R2..P3-R8): the owner is this repository, `.github/workflows/ci.yml` (every push /
+PR) and `nightly.yml` (daily), DETERMINISTIC tier only. The sketch below stays as the plan for the STATISTICAL lane.
+
+- **Every push:** `npm test` (DETERMINISTIC, with the types-compat fixture inside it) + `npm run torture`, Node
+  22 / 24 / 26 + 26.8.2, ubuntu-latest (x86) and macos-latest (arm64); coverage + the packed-size budget once
+  (ubuntu-latest, Node 26) (P3-R2, P3-R3).
+- **Nightly (STATISTICAL, not yet written):** the A/B lane on ubuntu-latest (x86) AND macos-latest (arm64). R-10 is the
   point: a branchless verdict from one ARM chip says nothing about x86 branch predictors. Upload
   the logs as artifacts; the verdicts are REPORTED until a release run gates them.
 - The quiet-lock does not exist on hosted runners. Noise is handled by the interleaved A/B
@@ -349,14 +374,15 @@ Asked 2026-11-11 in P1 final audit Session B (B2), one AskUserQuestion sitting a
   - Each adoption is that package's own reviewed change and A/B.
   - Sites that feed a write stay branchy unless R-3 says otherwise.
 - **P3 release:** CI nightly green for a week, the STATISTICAL claims gated once, docs with
-  tiers.
+  tiers. The week is 7 consecutive green `nightly.yml` (DETERMINISTIC) runs; the A/B is one
+  release-gating run, never a streak (P3-R5a, section 5d).
   - Ruling P3-R1 (maintainer, 2026-11-11, asked "Should a benchmark be planned post 1.0.0 or
     prior?"; answer "As you recommend"): the STATISTICAL A/B (hint vs branchless, branchless vs
     branchy; interleaved, hosted CI on x86 AND arm64, R-10) is gated BEFORE `/release 1.0.0`,
     because the README choice table's "When" advice rests on one Apple M4 Pro (PRELIMINARY) and
     an inherited I1; the REPORTED n-sweep tables wait until after 1.0.0 (docs only, a 1.0.x
     docs release). Not chosen: ship 1.0 as correctness-only with neutral "When" wording and
-    move every benchmark to 1.1. Needs first: the CI workflow (owner open, section 7) and the
+    move every benchmark to 1.1. Needs first: the CI workflow (owner ruled 2026-11-11, section 5d) and the
     A/B tests (a research rung, then a gate unit); both may run during the final audit.
 
 The likely outcome to plan for: the main value is ONE tested set of kernels with one contract

@@ -1,5 +1,5 @@
 /node_modules/
-/package-lock.json
+# package-lock.json is committed: CI runs `npm ci` + the npm cache (ROADMAP 5d, P3-R7 / P3-R7a)
 
 # burst handoff (session state, never shipped)
 /.handoff/

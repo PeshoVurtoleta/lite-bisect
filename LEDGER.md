@@ -217,6 +217,22 @@ on these kernels. No single green gate authorises a release.
 - **Evidence:** .handoff/PROPOSAL-bisect.md Q-KERNELS; ROADMAP section 3 row 16.1 S0 (PRELIMINARY, in L1); R-5.
 - **Reopens with:** an R-5 rung (n >= 1e5, kill rule fixed before the run).
 
+### A7. CI shapes not chosen for the hosted workflows *(RULED 2026-11-11, P3-R2..P3-R8)*
+- **Reason:** the maintainer took every recommended option (ROADMAP 5d). Not chosen: a 12-leg matrix with
+  ubuntu-24.04-arm (OS and arch separated; ~1.5x runner minutes) and a 6-leg matrix with no node 26.8.2 leg (M4
+  would never run in CI); coverage + size on every leg (a Node's npm / zlib can move the tarball size with no
+  product change) and test + torture only; a LiteUtils `gates` job now (reopens P1-R1: hosted CI waits for LiteUtils
+  1.0 on npm); a schedule trigger inside ci.yml and no nightly yet; full commit-SHA action pins (the suite pins
+  @v7 majors, one suite-wide bump); `npm install` (resolves ranges at run time); push to main only. P3-R5a
+  (2026-11-11, "I agree"): a STATISTICAL A/B lane counting toward the release's "nightly green for a week" (a
+  timing streak multiplies the hosted-runner false-red rate by ~7; STATISTICAL is gated once per release).
+- **Evidence:** ROADMAP.md section 5d; `.github/workflows/ci.yml`, `nightly.yml`.
+- **Law:** none new (law 7 is why the matrix has an x86 and an arm64 OS). **Gate:** `.handoff/p3/ci-check.mjs` checks
+  the ruled shape (legs, steps, pins, triggers) with must-fail controls; local, not in `npm test`.
+- **Reopens with:** gates -- LiteUtils 1.0 on npm (P1-R1, planned unit, not a reopen); 12 legs -- an R-10 STATISTICAL
+  verdict that differs between arm64 Linux and arm64 macOS; SHA pins -- a suite-wide pinning change; every-leg size
+  -- a size regression seen only on a Node other than 26.
+
 ---
 
 ## B. Defects found and fixed
@@ -559,6 +575,19 @@ on these kernels. No single green gate authorises a release.
   a tool's own fail-closed claim is a hypothesis until a lane that changes tier mid-run shows it.
 - **Gate:** LiteBisect's P1 alloc gate reads every window >= 1 (ROADMAP section 6); the fix
   belongs in LiteUtils.
+
+### D3. A CI ruling was asked on an unchecked premise: "package-lock.json is committed" *(FOUND 2026-11-11, P3 burst 1; RULED P3-R7a)*
+- **What happened:** the orchestrator's install question (P3-R7) said the lockfile was committed because the file
+  existed in the checkout; `.gitignore:2` ignored it and `git ls-files` did not list it. The ruled `npm ci` + `cache:
+  npm` would have failed at setup on every hosted leg. The coder found it while writing the workflow.
+- **Root cause:** presence in the working tree was read as "tracked"; no `git ls-files` / `git check-ignore` check
+  before the question.
+- **Evidence:** `.handoff/p3/evidence/ci-check.log` (PREREQ row); re-ask P3-R7a "Commit the lockfile (Recommended)"
+  (ROADMAP 5d).
+- **Law:** none new (law 3's spirit on a repo fact: EXPECTED is not checked). Lesson: every fact in a ruling's option
+  text is checked by a command before the question is asked.
+- **Gate:** `.handoff/p3/ci-check.mjs` PREREQ (lockfile tracked by git, v3, platform binaries present); exits 1 until
+  the lockfile is committed. Not in `npm test` (it reads git state).
 
 ## Not yet covered
 
