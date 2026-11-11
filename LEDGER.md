@@ -293,6 +293,18 @@ on these kernels. No single green gate authorises a release.
 - **Gate:** `npm run torture` revert checks r1-r5 / f1 / f5 / fn. Reopens with: any edit to the lane verdict line
   or laneOk that the retain control does not fail.
 
+### B6. The alloc gate read a JSON null window as 0 B/op *(FOUND 2026-11-11, P1 U6 review r1; FIXED r2)*
+- **What happened:** alloc-per-op `--json` writes a NaN window as `null`; the U6 checkers compared
+  `x >= lo && x <= hi`, and `null >= 0 && null <= 1` is true, so a null (or a string such as "0.3") window passed
+  the inlined lanes, the Smi lanes of the not-inlined run and the P1-R12 empty-lane check. The NaN controls fed a
+  JS NaN, which the real path (JSON.parse of the tool's stdout) never receives.
+- **Root cause:** relational operators coerce null to 0; a control built from in-memory values instead of the
+  serialized form the verdict path reads (the B5 shape).
+- **Evidence:** .handoff/p1/review-u6/VERDICT-r1.md (null-window probe); fix in test/gates/alloc.test.mjs 943470b6
+  (`typeof x === 'number'` in both filters, null-window controls; .handoff/p1/evidence/u6r2-revert.log B1a / B1b).
+- **Law:** 9. **Gate:** `npm run gates:local` controls. Reopens with: a checker that reads a tool value without a
+  type check.
+
 ---
 
 ## C. Measurement lessons (this package's own runs)
@@ -426,6 +438,21 @@ on these kernels. No single green gate authorises a release.
   < 100 B body that keeps an int32 mask and is not SLOWER at any n; a V8 change to Maglev's cap or
   to these bodies' bytecode; an x86 run (R-10).
 
+### C8. `--no-turbo-inlining` alone still inlines under Maglev; the empty harness lane reads up to 1.03 B/op under load *(MEASURED 2026-11-11, P1 U6; RULED P1-R11, P1-R12)*
+- **What happened:** (1) with `--no-turbo-inlining` only, alloc-per-op's driver ran as Maglev code through
+  windows 0-1 and Maglev inlined the lane and the 55 B branchy body: the 30 branchy non-Smi lanes read 0.49..0.86
+  B/op in window 1, then ~16.4 from window 2 (with --warm 2e5 and 5e6). (2) An EMPTY lane under run A's flags read
+  0.78 / 1.03 / 1.03 B/op in windows 0-2 at load1 ~28 (other sessions' suites), above the 1.0 inlined ceiling; at
+  load1 2-9 it read <= 0.52.
+- **Root cause:** (1) the not-inlined contract needs both tiers' inlining off (law 3: the flag was EXPECTED to cover
+  it). (2) harness / JIT allocation lands in the counter's 256 KiB steps; one extra step at N = 1e6 is 0.26 B/op.
+- **Evidence:** .handoff/p1/evidence/u6-harness-probe.log, u6-gates.log, u6r2-gates.log (node v26.8.2, LiteUtils
+  085c54d / aed6684, untimed counts). Revert R9a / R9b in u6-revert.log.
+- **Law:** 3, 8. Rulings: P1-R11 (run B = `--no-turbo-inlining --no-maglev-inlining`, tier check requires both),
+  P1-R12 (same-run empty lane > 1.0 in any window 1..5 = NO VERDICT, never a pass). Open: run A headroom is about
+  one quantum (max 0.78 vs 1.0), fail-closed but may read NO VERDICT / FAIL on a loaded host.
+- **Gate:** `npm run gates:local`. Reopens with: a V8 change to Maglev inlining flags, or an empty lane > 1.0 on a
+  quiet host.
 ---
 
 ## D. Process lessons

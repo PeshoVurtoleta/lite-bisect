@@ -29,6 +29,8 @@
     "gen:check": "node scripts/gen.mjs --check",
     "test": "node --test \"test/*.test.mjs\"",
     "torture": "node --expose-gc test/torture.mjs",
+    "gates": "node --test test/gates/alloc.test.mjs test/gates/bytecode.test.mjs",
+    "gates:local": "LITE_UTILS_DIR=../LiteUtils npm run gates",
     "coverage": "c8 --include=Bisect.js --temp-directory node_modules/.c8/tmp --report-dir node_modules/.c8/report --reporter=text --reporter=text-summary --check-coverage --lines 100 --branches 100 node --test \"test/!(*.inline|*.mutants).test.mjs\""
   },
   "keywords": [
