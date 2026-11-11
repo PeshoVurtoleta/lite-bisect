@@ -47,8 +47,8 @@ number from them is never quoted as this package's number.
 ## 0. The laws (read this first)
 
 All 11 were inherited. Each becomes this package's own law once a `C<n>` entry here confirms
-it: law 3 (C1, C3, C7), law 8 (C2), laws 4 and 6 (C4, C5), law 5 (C6) and law 2 (C7, Maglev tier
-only) are confirmed on this package as of 2026-11-11.
+it: law 3 (C1, C3, C7), law 8 (C2), laws 4 and 6 (C4, C5), law 5 (C6), law 2 (C7, Maglev tier
+only) and law 1 (C10) are confirmed on this package as of 2026-11-12.
 
 1. **Time the consumer, not the search.** A branchless search's result is data at the end of a
    chain of loads; whatever consumes it waits. Branchless read 2-4x faster alone and an
@@ -232,6 +232,20 @@ on these kernels. No single green gate authorises a release.
 - **Reopens with:** gates -- LiteUtils 1.0 on npm (P1-R1, planned unit, not a reopen); 12 legs -- an R-10 STATISTICAL
   verdict that differs between arm64 Linux and arm64 macOS; SHA pins -- a suite-wide pinning change; every-leg size
   -- a size regression seen only on a Node other than 26.
+
+### A8. The K = 11 / A/A 0.95..1.05 gate shape on a contended host *(REFUSED 2026-11-12, P3 research burst `ab` R3 kill rule; gate shape open in PROPOSAL-ab Q-AB-LANES / Q-AB-K / Q-AB-BAND)*
+- **Reason:** (1) the contended host: under 10 busy-loop spinners on this 12-core host (load1 6.35 .. 11.89) the lab
+  VOIDed an A/A twin in 4 of 5 runs (9 lanes, aa 0.851 .. 1.191); the INTAKE kill rule (A/A VOID in > 1 of 5) fired, so
+  this shape gives no verdict there. It failed CLOSED: no high-margin word changed. Under 4 spinners: 0 VOID in 5 runs.
+  (2) Not refused here (no INTAKE kill rule named it; open as PROPOSAL-ab Q-AB-LANES (b)): gating every lane -- four kill-rule lanes have a local margin < 0.10 (walk:256:1 0.044, walk:4096:4 0.033, fw:1024
+  0.078, fw:2048 0.002), and their words moved with load (walk:256:1 WITHIN in 3 contended runs, fw:2048 WITHIN /
+  SLOWER across QUIET runs). Gating them would make runner noise a release blocker.
+- **Evidence:** .handoff/research/ab/PROGRESS.md R1 + R2, R3; logs/r12-strict.log, logs/r3-s4-*.log, logs/r3-s10-*.log,
+  logs/r3-ksub-*.log. Apple M4 Pro, node v26.8.2, lab 8128d400, frozen 88e5b1c-10add825, K = 11, C = 3. PRELIMINARY
+  (one CPU; synthetic load).
+- **Law:** 5 and 9 (the A/A twin is what turned contention into NO VERDICT; the band is not widened to get a verdict).
+- **Reopens with:** a hosted run (R4) or a larger K that holds the A/A band under contention, with the must-fail SLOW
+  control still tripping; a low-margin lane whose margin reaches >= 0.25 on both CPUs.
 
 ---
 
@@ -587,6 +601,26 @@ on these kernels. No single green gate authorises a release.
   14.0..18.0 B/op in run B) and .nanlit (<= 1.0 B/op in both runs).
 - **Gate:** the docs Q-BOX row (DETERMINISTIC) and `npm run gates:local` lanes. Reopens with: a V8 that passes a
   double unboxed across a non-inlined call.
+
+### C10. On the generated F64 kernels: C5 reproduces, branchless is 2-3x branchy read-only, and I1 reproduces when the result feeds copyWithin *(MEASURED 2026-11-11T23:10-23:12Z (UTC), P3 research burst `ab` R1 + R2; reopens nothing, ruled at the PROPOSAL-ab handshake)*
+- **What happened:** `--strict` hold, entry QUIET (load1 1.95 vs baseline 2.21), K = 11, C = 3, ratio B / A.
+  Q1 hint vs branchless: every C5 word reproduced (walk d = 1 / 4 FASTER 0.622 / 0.917 at n = 4,096, 0.451 / 0.676 at
+  65,536; SLOWER 1.094 / 1.654 at 256; uniform SLOWER 3.403 / 2.796 / 2.399), each ratio within 0.05 of C5's (largest gap uni:4096 2.796 vs 2.842).
+  Q2 read-only, branchless vs branchy, uniform queries: FASTER 0.330 / 0.328 / 0.347 / 0.469 at n = 16 / 256 / 4,096 /
+  65,536. Q2 feeds-write (per op: search, copyWithin insert, search, copyWithin delete): branchless SLOWER 1.489 / 1.482 /
+  1.128 / 1.052 at n = 16 / 128 / 1,024 / 2,048 (same direction as I1's 1.089 .. 1.224; fw:16 / 128 above that band). Run 1 agreed at every word but
+  fw:2048 (WITHIN 1.038). Under 4 spinners (R3) every word but fw:2048's held from K = 5 (fw:2048 flipped at every K).
+- **Reason:** I1's mechanism, untraced here: the branchless position is data at the end of a load chain and the copy
+  waits on it; branchy's predicted branch lets the copy start early. As n grows the copy dominates and the ratio falls
+  toward 1. Read-only, nothing waits, and the branchless loop has no data-dependent branch to mispredict.
+- **Evidence:** .handoff/research/ab/PROGRESS.md R1 + R2; logs/r12-1.log, logs/r12-strict.log; INTAKE-2026-11-12.md.
+  Apple M4 Pro (128 B lines, 16 KB pages), node v26.8.2 / V8 14.6, lab 8128d400 (P0 lab e8942567 + the R0 diff, claims
+  review in this burst), frozen 88e5b1c-10add825. PRELIMINARY: one CPU (law 7), F64 only, n <= 65,536, powers of two.
+- **Law:** 1 confirmed on this package (the consumer decides: the same pair is 3x one way read-only and 1.5x the other
+  feeding a write); 6 (the fw ratio shrinks with n).
+- **Gate:** none yet; the STATISTICAL release gate is PROPOSAL-ab (Q-AB-*). Reopens with: an x86 run (R4) that reads
+  another word at a high-margin lane; an out-of-cache read-only lane (Q-AB-LARGEN; algorithmica prior art: branchless
+  can lose out of cache).
 
 ---
 

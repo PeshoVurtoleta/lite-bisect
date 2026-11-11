@@ -318,6 +318,18 @@ every %-call's misuse behaviour). Class 2 -- the flag with no refusal (a run wit
 retention: fail-open, unlike AU-R5a's tier flag); settle-until-stable (timing-dependent); serializing the controls
 file only (mitigation; the clean gate still flakes); widening the floor (offered in the triage, not asked).
 
+## 5f. P3 A/B PROPOSAL rulings (maintainer, 2026-11-12, one AskUserQuestion sitting; .handoff/PROPOSAL-ab.md section 5)
+
+| Q-id | Answer (quoted) | Effect |
+|---|---|---|
+| Q-AB-WHERE | "Dispatch-only ab.yml (Recommended)" | workflow_dispatch-only ab.yml on ubuntu-latest + macos-latest, dispatched on the release candidate before /release; no schedule |
+| Q-AB-LANES | "13 high-margin lanes (Recommended)" | 13 lanes gate (margin >= 0.25, stable in R3); the low-margin and report lanes run REPORTED |
+| Q-AB-K | "K = 11, C = 3 (Recommended)" | K = 11, C = 3; one re-dispatch of a NO VERDICT run allowed |
+| Q-AB-BAND | "0.95..1.05 (Recommended)" | A/A band 0.95..1.05 on hosted runners |
+| Q-AB-FEEDSWRITE | "Gate fw:16 + fw:128 (Recommended)" | I1 gated at fw:16 / fw:128; README branchy row INHERITED -> STATISTICAL (n <= 128) |
+| Q-AB-README | "Name CPUs, per-CPU words (Recommended)" | README rows name their CPUs; a per-CPU disagreement drops the speed word for that CPU |
+| Q-AB-LARGEN | "Scope README to n <= 65,536 (Recommended)" | README "When" scoped to n <= 65,536; large n -> post-1.0 sweep (8a item 5) |
+
 ## 6. Verification plan, by tier
 
 - **DETERMINISTIC (`npm test`):**
@@ -403,6 +415,80 @@ PR) and `nightly.yml` (daily), DETERMINISTIC tier only. The sketch below stays a
 
 The likely outcome to plan for: the main value is ONE tested set of kernels with one contract
 replacing ~28 copies; speed wins are per site and must be shown per site.
+
+## 8a. Post-1.0 (planning list; maintainer 2026-11-12: "Yes, please, add it.")
+
+A list with triggers, not a program: no planner pass before `/release 1.0.0`. One planner pass after the
+release, once the A/B result (P3-R1) is known. Each item names its trigger and where it runs.
+
+1. **P2 adoption (the main value; section 8).** LogN SortedArray / MergeSortTree / WaveletTree (9 sites), then
+   the per-frame sites (Keyframe, MotionPath, Scrollforge, Virtual). Trigger: 1.0 on npm. Runs in EACH consumer
+   package's own session (its own reviewed change + A/B, law 1), never here.
+2. **R-3 feeds-write outside LogLogN (section 5).** Trigger: the first adoption that hits a write-feeding site
+   (SortedArray, YFastTrie). A research burst here; I1 stays INHERITED until then.
+3. **Node upgrade / re-pin procedure (not planned anywhere before this list).** Gates tied to node v26.8.2:
+   the inline pin's M4 control (U5), the bytecode budget (U6, expect.json), the 103 B / Maglev 100 B claims
+   (C1, C7), and every CI leg's pin. ubuntu-latest announced a move to Ubuntu 26 (seen in the 2026-11-12 run
+   notices). Trigger: a new Node major or a pinned-Node retirement in CI. Needs a written procedure first: the
+   recut rule (~/.claude/CLAUDE.md: run the live lane, any UNEXPLAINED failure stops the recut), new pins named
+   by commit + sha, docs claims re-tiered. A small planner pass, then one coder unit.
+4. **LiteUtils gates into hosted CI (P1-R1).** Trigger: LiteUtils 1.0 on npm. Add `@zakkster/lite-utils`
+   `^1.0.0` (devDependency) and move `gates` into ci.yml. (A green `gates` run is still needed BEFORE 1.0.)
+5. **REPORTED n-sweep tables (P3-R1).** A 1.0.x docs-only release with provenance; gates nothing.
+   - Method (Drepper, "What Every Programmer Should Know About Memory", 2007; principles, not its numbers): a
+     working-set sweep, with n points placed on EACH host's own boundaries (L1D, L2, LLC, TLB reach = TLB
+     entries x page size), not one shared n list. Cache geometry does not transfer between the two CI legs any
+     more than branch prediction does (R-10): this Mac (Apple M4 Pro, read 2026-11-12 with sysctl) has 128 B
+     lines, 16 KB pages, L1D 128 KB / L2 16 MB on the P-cores; ubuntu-latest x86 typically has 64 B lines and
+     4 KB pages (read it on the runner: `getconf -a | grep -i CACHE`, `getconf PAGESIZE`). A Float64 line holds
+     16 keys on one and 8 on the other, and a 4 KB page puts every binary-search step above ~512 keys apart on
+     its own page (TLB misses, not only cache misses, at large n). Every table row records the host's line
+     size, page size and cache sizes in its provenance. Hardware prefetchers follow streams, not a binary
+     search's jumps; that gap is why R-5 / R-13 layouts can win at large n. Sizes: geometric
+     (floor(1.17^k), algorithmica) and NOT only powers of two -- a power-of-two n aliases the search's midpoints
+     onto the same cache sets (algorithmica, Zen 2: ~360 ns at 2^20 vs ~300 ns at 2^20 + 123). The P3 A/B lanes
+     are all powers of two and stop at 65,536 Float64 (512 KB): the "branchless default" advice is evidenced
+     only inside that range until a large-n sweep exists.
+6. **R-13 Read-only LUT index for static arrays (added 2026-11-12, maintainer question "can a lut provide speed
+   at the cost of storage, sweet spot?").** Evidence (REPORTED, another package, one CPU): LiteLogLogN
+   RESEARCH 17.2 L1 -- a top-bits offset LUT (2^T + 1 Uint16 offsets on the key's top T bits) + branchless in
+   the bucket ran x0.22-0.35 of the plain search at T = 6 (x0.33-0.49 at T = 4), n = 32..4,096, 16-bit integer
+   keys; 66 B per 8 KB slot (0.8%); T = 5 or 6 unsettled (17.3). Limits: bounded integer keys, near-uniform
+   top bits, n <= 4,096, one Apple M4 Pro. Open for LiteBisect: Float64 / skewed keys (top bits of a scaled key
+   or a sampled-quantile table instead), n >= 1e5 where cache misses dominate, build cost amortized over
+   queries, rebuild on write (R-7: a maintained LUT belongs in its owner). A new stateful API (build + query),
+   not a per-call kernel. Trigger: a P2 site with a static large array (LogN WaveletTree / MergeSortTree) whose
+   own A/B shows search time matters. A research burst (spike ladder; kill rule: no FASTER cell at <= 2% storage).
+7. **Parked items with reopen triggers.** Selector (A5): only if adoption shows callers picking the wrong
+   kernel. Eytzinger (R-5 / A6): a research burst at n >= 1e5, and compare with R-13 (both attack the cache
+   misses). Interpolation search (R-12): optional, near-uniform keys (MotionPath LUTs, timestamps).
+   - Prior art for R-5 / R-13 (read 2026-11-12, not measured here): (a) theory ceiling -- a sorted-array
+     binary search costs ~log2(N / B) cache-line transfers, an optimal layout ~log_B N (Demaine, "Cache-Oblivious
+     Algorithms and Data Structures", BRICS 2002; van Emde Boas layout), so a layout change saves at most about
+     a factor log2 B in misses at large n (B = 8 Float64 per 64 B line, 16 per 128 B line) and nothing once the
+     array is cache-resident: a kill-rule expectation, not a promise. (b) In practice Eytzinger with prefetch
+     beats vEB (Khuong-Morin, arXiv:1509.05053); JS has no prefetch, which is R-5's open question. (c) Build the
+     layout in one O(n) pass from the sorted array; sorting straight into Eytzinger order lost
+     (github.com/mzaks/eytzinger_sort, 2020, Rust, unquantified). (d) An Eytzinger lower bound must descend the
+     full tree and recover the index (Khuong-Morin); an equality early exit (that repo's find) is not lower-bound
+     semantics with duplicates. (e) Packed-memory arrays (gapped arrays for cheap inserts) break the plain
+     sorted-array contract: a SortedArray-owner question, like R-7, not a kernel here. (f) algorithmica
+     (Slotin, en.algorithmica.org/hpc/data-structures/binary-search and /s-tree; C++, AMD Zen 2, 4-byte ints;
+     REPORTED, not this hardware): branchless is 2.5-3x faster than std::lower_bound on small arrays but SLOWER
+     on large ones, because the branchy loop's speculation fetches the next key early (implicit prefetch);
+     prefetching both children restores parity. Eytzinger + one prefetch of t[16k] (4 levels = one 64 B line of
+     ints) is ~2x std::lower_bound at large n; the lower bound is recovered with k >>= ffs(~k); a fixed
+     iteration count plus a predicated last step replaces padding. The S+ tree (static B-tree, B = 16 = one line)
+     reaches ~15x, but its in-node search is AVX2 SIMD; scalar JS would keep only the layout (unmeasured). For
+     Float64 a line holds 8 keys (64 B, x86) or 16 (128 B, Apple), so "levels per prefetch" differs per host.
+8. **R-14 Early-load "prefetch" in JS (added 2026-11-12, from (f)).** JS has no prefetch instruction, but an
+   independent load of both next midpoints (or of t[16k] for Eytzinger), sunk into a value the result depends
+   on trivially so V8 cannot drop it, may act as one: the CPU issues it while the compare resolves. Unknown:
+   whether V8 eliminates or reorders it, whether it re-introduces allocation or deopt, and whether it beats
+   branchy at large n. Trigger: a large-n sweep (item 5) showing branchy beating branchless out of cache. A
+   research burst (spike ladder; oracle, A/A, SLOW control, B/op lane; the TurboFan graph checked for the load).
+9. **After the release.** MOVE (never delete) finished specs, `audit/`, `.handoff/frozen/` and the review
+   overlays into `.handoff/archive/1.0.0/` (ORCHESTRATOR "STATE"); rotate HISTORY.md past ~50K chars.
 
 ## 9. LiteUtils integration (planning only, 2026-11-10)
 

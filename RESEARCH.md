@@ -83,3 +83,23 @@ Ruled (maintainer, INTAKE A5): KEEP 103 B for both pairs on the fixed lanes; Q-B
 on the branchless pair pins TurboFan inlining only and the docs say Maglev does not inline it. Why v3 is slower is not
 traced (hypothesis: `-(false)` is -0, a double, so the mask may leave int32); an int32-mask form with the folded guard
 reads 104 B (untimed). Not covered: x86 (R-10), Maglev-tier timing, a caller that stays in Maglev.
+
+## 2. P3 research burst `ab` (2026-11-11 / 12): the STATISTICAL A/B, locally (PRELIMINARY, one CPU; LEDGER C10, A8)
+
+Question (P3-R1): can a timing gate decide hint vs branchless (Q1) and branchless vs branchy, read-only and feeding a
+write (Q2), on hosted x86 and arm64 with no quiet lock? Lab `.handoff/research/ab/t/ab-lab.mjs` 8128d400 (the reviewed
+P0 lab plus a stated diff, reviewed in the burst's claims review), F64 kernels frozen from 88e5b1c, K = 11, C = 3, A/A
+twin, must-fail SLOW control, B/op lane; selftest 10 / 10 markers. Apple M4 Pro, node v26.8.2.
+
+- Q1 (strict hold, entry QUIET): C5 reproduced word for word on the generated kernels; the hint wins on coherent
+  streams (d <= 4) at n >= 4,096 and loses 2.4-3.4x on uniform queries.
+- Q2 read-only: branchless FASTER than branchy at every n = 16 .. 65,536 (0.33-0.47). Not measured: n > 65,536,
+  non-power-of-two n (algorithmica prior art: branchless can lose out of cache).
+- Q2 feeds-write (search -> copyWithin insert -> search -> copyWithin delete): branchless SLOWER at n = 16 .. 2,048
+  (1.05-1.49): I1 reproduced, so law 1 is now this package's own (time the consumer).
+- Noise (R3, synthetic load): moderate load leaves every high-margin word stable from K = 5; heavy contention VOIDs
+  the A/A twin (4 of 5 runs) and the lab reports NO VERDICT, never a wrong high-margin word. Four low-margin lanes
+  (walk:256:1, walk:4096:4, fw:1024, fw:2048) move with load; the PROPOSAL keeps them REPORTED, not gated
+  (Q-AB-LANES; LEDGER A8 refuses only the contended shape).
+- Open, in `.handoff/PROPOSAL-ab.md`: where the release run lives, which lanes gate, K, the A/A band, I1's tier, the
+  README "When" wording per CPU, the large-n scope. The hosted x86 + arm64 run (R4) is the next unit.
