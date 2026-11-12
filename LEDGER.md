@@ -48,7 +48,7 @@ number from them is never quoted as this package's number.
 
 All 11 were inherited. Each becomes this package's own law once a `C<n>` entry here confirms
 it: law 3 (C1, C3, C7), law 8 (C2), laws 4 and 6 (C4, C5), law 5 (C6), law 2 (C7, Maglev tier
-only) and law 1 (C10) are confirmed on this package as of 2026-11-12.
+only), law 1 (C10) and law 7 (C11, hosted x86) are confirmed on this package as of 2026-11-12.
 
 1. **Time the consumer, not the search.** A branchless search's result is data at the end of a
    chain of loads; whatever consumes it waits. Branchless read 2-4x faster alone and an
@@ -620,7 +620,30 @@ on these kernels. No single green gate authorises a release.
   feeding a write); 6 (the fw ratio shrinks with n).
 - **Gate:** none yet; the STATISTICAL release gate is PROPOSAL-ab (Q-AB-*). Reopens with: an x86 run (R4) that reads
   another word at a high-margin lane; an out-of-cache read-only lane (Q-AB-LARGEN; algorithmica prior art: branchless
-  can lose out of cache).
+  can lose out of cache). R4 (C11) ran x86: no high-margin word moved; C10 stands.
+
+### C11. On hosted x86 and an arm64 VM the 13 gated words hold; x86 differs at the low-margin walk:256:1 and fw:2048 and in the feeds-write size *(MEASURED 2026-11-12T00:24-00:30Z (UTC), P3 unit R4, ab-research.yml run 43127032794; REPORTED)*
+- **What happened:** one dispatch, one run per OS, lab bench/research/ab-lab.mjs 211bef39 (= 8128d400 except the
+  frozen path), K = 11, C = 3, node v26.8.2 / V8 14.6.202.34-node.28. Selftest 10 / 10 on both. ubuntu-latest (AMD
+  EPYC 9V45, 4 vCPU, load1 0.60): exit 0, A/A 0.987..1.006 on all 23 lanes. macos-latest ("Apple M1 (Virtual)", 3 vCPU,
+  load1 9.10 at start, just booted): exit 2, VOID AA-DRIFT on walk:256:1 and walk:65536:8192 (neither gated). The 13
+  gated lanes (Q-AB-LANES) read their expected words on both, A/A median inside 0.95..1.05. x86 differs from the M4 Pro
+  at walk:256:1 (hint WITHIN 1.016 vs SLOWER 1.094: "C5 DIFFERS", a REPORTED lane; VOID on the M1 VM) and in size,
+  not word, at fw:16 / fw:128: SLOWER 1.196 / 1.249 vs 1.489 / 1.482 (M4 Pro) and 1.617 / 1.433 (M1 VM),
+  margins 0.146 / 0.199 under the 0.25 that picked the 13. Read-only branchless FASTER 0.326..0.431 (x86) and
+  0.372..0.547 (M1 VM). fw:2048 WITHIN on both hosted CPUs (M4 Pro strict SLOWER 1.052,
+  margin 0.002; run 1 WITHIN 1.038).
+- **Reason:** not traced. Law 7 (branch prediction and memory ordering are per CPU); the cache geometry differs as
+  ROADMAP 8a item 5 says (x86 64 B lines / 4 KB pages / L1D 48 KB / L2 1 MB; Apple 128 B / 16 KB / 128 KB / 12-16 MB),
+  but at n <= 65,536 F64 (512 KB) no gated word moved with it. The arm64 VM's VOIDs coincide with its boot-time load (A/A
+  IQRs up to [0.865..1.064] on gated uni:256), the R3 S = 10 picture (A8): failed CLOSED, no wrong high-margin word.
+- **Evidence:** .handoff/research/ab/PROGRESS.md R4; run on e9c6ae8 (ab-research.yml c8b4ca64); logs/r4-43127032794/ (provenance, selftest, rung-all, exit-code,
+  ksub-*). REPORTED: hosted, no quiet lock, one run per OS; runner CPUs vary per dispatch.
+- **Law:** 7 (an x86 leg changed a low-margin word and the feeds-write size); none new.
+- **Gate:** none yet; the ab.yml gate unit (PROPOSAL-ab, ruled). Consequence for it: the R0 lab's exit 2 fires on any
+  kill-rule VOID (walk:256:1 included), which would make this dispatch NO VERDICT on macOS; the gate lab must scope its
+  verdict to the 13 gated lanes. Reopens with: a gated lane reading another word on a release dispatch; a runner CPU
+  family not seen here.
 
 ---
 

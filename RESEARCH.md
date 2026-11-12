@@ -102,4 +102,17 @@ twin, must-fail SLOW control, B/op lane; selftest 10 / 10 markers. Apple M4 Pro,
   (walk:256:1, walk:4096:4, fw:1024, fw:2048) move with load; the PROPOSAL keeps them REPORTED, not gated
   (Q-AB-LANES; LEDGER A8 refuses only the contended shape).
 - Open, in `.handoff/PROPOSAL-ab.md`: where the release run lives, which lanes gate, K, the A/A band, I1's tier, the
-  README "When" wording per CPU, the large-n scope. The hosted x86 + arm64 run (R4) is the next unit.
+  README "When" wording per CPU, the large-n scope. All seven were ruled 2026-11-12 (PROPOSAL-ab section 5); the hosted run (R4) is section 3.
+
+## 3. P3 unit R4 (2026-11-12): the same lab on hosted x86 + arm64 (REPORTED; LEDGER C11)
+
+`.github/workflows/ab-research.yml` (workflow_dispatch only) ran `bench/research/ab-lab.mjs` (the section 2 lab, frozen
+path moved) once per OS in run 43127032794: ubuntu-latest = AMD EPYC 9V45 x86 (4 vCPU, 64 B lines, 4 KB pages),
+macos-latest = "Apple M1 (Virtual)" arm64 (3 vCPU, 128 B lines, 16 KB pages, boot-time load). Selftest 10 / 10 on both.
+- The 13 gated lanes (PROPOSAL-ab Q-AB-LANES) read their expected words on BOTH runners with A/A medians inside 0.95..1.05.
+- x86 differs at the low-margin walk:256:1 (hint WITHIN, not SLOWER) and fw:2048 (WITHIN; the M4 Pro read SLOWER
+  at margin 0.002) and in feeds-write size (branchless SLOWER 1.20 /
+  1.25 at n = 16 / 128 vs 1.43..1.62 on the Apple hosts). Law 7 confirmed on this package.
+- The arm64 VM VOIDed two non-gated lanes (A/A drift, coinciding with boot-time load); the VOID on the kill-rule
+  lane walk:256:1 made the R0 lab exit 2 (a report-lane VOID leaves the exit alone); the gate unit's lab must
+  scope its verdict to the gated lanes. Hosted numbers are REPORTED (no quiet lock, one run per OS, runner CPUs vary).
