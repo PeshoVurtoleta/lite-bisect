@@ -487,6 +487,16 @@ release, once the A/B result (P3-R1) is known. Each item names its trigger and w
    whether V8 eliminates or reorders it, whether it re-introduces allocation or deopt, and whether it beats
    branchy at large n. Trigger: a large-n sweep (item 5) showing branchy beating branchless out of cache. A
    research burst (spike ladder; oracle, A/A, SLOW control, B/op lane; the TurboFan graph checked for the load).
+   - Same burst, second arm (added 2026-11-12, maintainer "Yes, please"): k-ary search on the plain sorted
+     array. A branchless k-ary step makes k - 1 INDEPENDENT loads (they can be in flight together) and leaves
+     log_k n dependent rounds instead of log2 n: more work per step, fewer memory round trips. Expected
+     (nominal, unmeasured): a loss in cache (about 1.26x the compares at k = 3), a possible win out of cache;
+     the limit case is algorithmica's S-tree (16 keys per node, SIMD there; scalar here). Arms: k = 3 and
+     k = 4 (two midpoints' worth of loads) vs branchless and branchy, on the same large-n lanes as R-14.
+     Prior art: ternary search (cp-algorithms.com/num_methods/ternary_search.html) solves a DIFFERENT
+     problem (the peak of a unimodal function); on a sorted array its value here is only the independent-loads
+     shape. For a unimodal integer function, a lower bound on "f(m) >= f(m + 1)" needs ~2 log2 n evaluations
+     vs ternary's ~3.4 log2 n (and is plateau-safe only when f is strictly unimodal, as ternary is).
 9. **After the release.** MOVE (never delete) finished specs, `audit/`, `.handoff/frozen/` and the review
    overlays into `.handoff/archive/1.0.0/` (ORCHESTRATOR "STATE"); rotate HISTORY.md past ~50K chars.
 

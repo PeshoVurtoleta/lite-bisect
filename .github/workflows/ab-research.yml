@@ -1,0 +1,119 @@
+# ab-research.yml -- lite-bisect hosted A/B research run (P3 unit R4; maintainer rulings 2026-11-12: lab path
+# bench/research/, dispatch ref main).
+# RESEARCH ONLY, REPORTED tier (ROADMAP 6): hosted runners have no quiet lock, so every number this run prints gates
+# nothing and enters docs only as a REPORTED measurement with its provenance.log. Never part of `npm run verify`, never
+# a required check. NOT the ab.yml release gate (STATISTICAL tier, a later unit).
+# The lab is bench/research/ab-lab.mjs; it reads the tracked frozen kernel bench/research/frozen/88e5b1c-10add825/
+# Bisect.js (full sha256 checked; an edited copy STOPs (ANCHOR), a moved one CRASHes (ENOENT); both exit 1 and fail
+# the selftest), never the live Bisect.js.
+# Dispatch (workflow_dispatch only; GitHub needs this file on the default branch to dispatch it):
+#   gh workflow run ab-research.yml --ref main
+# Logs come back as one artifact per OS (ab-r4-<os>: provenance.log, selftest.log, rung-all.log, exit-code.txt):
+#   gh run download <run-id>
+# The lab imports only node: builtins: no npm ci, no npm cache.
+# No concurrency group: each hosted job is a fresh VM (two dispatches never share a host), and a group would cancel a
+# pending dispatch in favour of a newer one.
+# Shallow checkout is fine: the lab never shells out to git.
+
+name: ab-research
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  ab:
+    name: ab research (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    # 30: a first guess (locally: selftest ~20 s, rung ALL ~2 min); re-size from the first run's wall times
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: ['26.8.2']
+    env:
+      # exactly the lab's REQUIRED_FLAGS (bench/research/ab-lab.mjs); the lab STOPs FLAGS on any missing one.
+      # $FLAGS is expanded UNQUOTED below on purpose: word-splitting turns it into one argv entry per flag.
+      FLAGS: --expose-gc --allow-natives-syntax --no-concurrent-recompilation --min-semi-space-size=4 --max-semi-space-size=4 --single-threaded-gc
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: setup node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+      # fail the job if setup-node resolved anything but the pin
+      - name: node is exactly the pin
+        env:
+          PIN: ${{ matrix.node }}
+        run: |
+          test "$PIN" = 26.8.2
+          test "$(node --version)" = "v$PIN"
+      - name: provenance
+        run: |
+          mkdir -p logs
+          echo 'none (rung ALL not run)' > logs/exit-code.txt
+          {
+            echo "date -u: $(date -u)"
+            echo "runner image: $ImageOS $ImageVersion"
+            echo "runner: $RUNNER_OS / $RUNNER_ARCH"
+            uname -a
+            uptime
+            node -v
+            node -p "process.arch + ' ' + process.versions.v8"
+            case "$RUNNER_OS" in
+              Linux)
+                lscpu
+                echo "nproc: $(nproc)"
+                getconf -a | grep -i CACHE
+                echo "PAGESIZE: $(getconf PAGESIZE)"
+                # informational: sysfs cache entries may be absent in a VM; their absence is not a failure
+                grep . /sys/devices/system/cpu/cpu0/cache/index*/{level,type,size,coherency_line_size} || true
+                ;;
+              macOS)
+                echo "cpu: $(sysctl -n machdep.cpu.brand_string)"
+                sysctl hw.ncpu hw.cachelinesize hw.pagesize hw.l1dcachesize hw.l2cachesize
+                # informational: not on the R4 provenance list; a key missing in the hosted VM is not a failure
+                sysctl hw.physicalcpu hw.logicalcpu hw.l1icachesize || true
+                # informational: hw.perflevel* exists only on Apple silicon; its absence is not a failure
+                sysctl -a | grep -E '^hw\.perflevel' || true
+                ;;
+              *)
+                echo "unexpected RUNNER_OS: $RUNNER_OS"
+                exit 1
+                ;;
+            esac
+          } 2>&1 | tee logs/provenance.log
+      # STOP gate: every selftest injection must trip its marker, else the harness itself is a finding
+      - name: selftest
+        run: |
+          node $FLAGS bench/research/ab-lab.mjs --selftest 2>&1 | tee logs/selftest.log
+          grep -qx 'SELFTEST all ok' logs/selftest.log
+      # the step's status is the lab's: exit 0 ok / 1 STOP / 2 VOID on a kill-rule lane (recorded in exit-code.txt)
+      - name: rung ALL
+        run: |
+          set +e
+          node $FLAGS bench/research/ab-lab.mjs --rung ALL 2>&1 | tee logs/rung-all.log
+          st=("${PIPESTATUS[@]}")
+          set -e
+          echo "${st[0]}" > logs/exit-code.txt
+          # a failed tee means an incomplete log: fail the step whatever the lab returned
+          test "${st[1]}" = 0
+          exit "${st[0]}"
+      - name: upload logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ab-r4-${{ matrix.os }}
+          path: logs/
+          retention-days: 30
+          if-no-files-found: error
