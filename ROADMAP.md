@@ -330,6 +330,14 @@ file only (mitigation; the clean gate still flakes); widening the floor (offered
 | Q-AB-README | "Name CPUs, per-CPU words (Recommended)" | README rows name their CPUs; a per-CPU disagreement drops the speed word for that CPU |
 | Q-AB-LARGEN | "Scope README to n <= 65,536 (Recommended)" | README "When" scoped to n <= 65,536; large n -> post-1.0 sweep (8a item 5) |
 
+Gate-unit rulings (maintainer, 2026-11-12, AskUserQuestion during the P3 A/B gate unit; cases section 2 did not rule):
+
+| Q-id | Answer (quoted) | Effect |
+|---|---|---|
+| AB-G1 | "FINDING wins (Recommended)" | a clean gated lane reading another word is a FINDING even when other gated lanes are VOID (listed on the verdict line; a missing gated lane: AB-G1a); no re-dispatch wins the word back |
+| AB-G1a | "Keep: missing = NO VERDICT (Recommended)" | AB-G1 covers VOID gated lanes in a complete gate run (23 lanes, K = 11, C = 3, no injection, PROV end, no STOP); a missing gated lane (subset, truncated, killed or STOPped run) is NO VERDICT, the wrong gated words listed on the line |
+| AB-G2 | "Bind live = frozen (Recommended)" | the gate times the frozen 88e5b1c-10add825 kernels and STOPs (ANCHOR, NO VERDICT) if a live Bisect.js F64 kernel body differs from its frozen body byte for byte |
+
 ## 6. Verification plan, by tier
 
 - **DETERMINISTIC (`npm test`):**
@@ -360,6 +368,12 @@ file only (mitigation; the clean gate still flakes); widening the floor (offered
 - **STATISTICAL (once per release, hosted CI):**
   - R-1, R-2 and R-3 as interleaved A/B with the 16.2 method;
   - each claim worded with its statistic, K rounds and a must-fail control.
+  - Gate: `.github/workflows/ab.yml` (workflow_dispatch only, ubuntu-latest x86 + macos-latest arm64, node 26.8.2)
+    runs `bench/ab-gate.mjs` (selftest, then the 23 lanes, K = 11, C = 3): the 13 Q-AB-LANES lanes gate against the
+    PROPOSAL-ab section 2 expected words, every other lane is REPORTED. Per OS: PASS (exit 0), FINDING (3), NO VERDICT
+    (2; 1 on a STOP or CRASH). The maintainer dispatches it once on the release candidate (one re-dispatch of a NO VERDICT run);
+    the release needs PASS on both OS in one dispatch, its run id quoted. Never in `npm run verify`, never a required
+    check, no schedule (5f, AB-G1, AB-G1a, AB-G2). `ab-research.yml` stays REPORTED research (R4).
 - **REPORTED:** n-sweep tables (n = 4 .. 1e7) per kernel and element type, with provenance.
 - **Revert check:** at adoption, each migrated call site's own tests must pass on both the old
   and the new search (same answers), and the A/B must be run on the real package, never on a
@@ -373,7 +387,7 @@ PR) and `nightly.yml` (daily), DETERMINISTIC tier only. The sketch below stays a
 - **Every push:** `npm test` (DETERMINISTIC, with the types-compat fixture inside it) + `npm run torture`, Node
   22 / 24 / 26 + 26.8.2, ubuntu-latest (x86) and macos-latest (arm64); coverage + the packed-size budget once
   (ubuntu-latest, Node 26) (P3-R2, P3-R3).
-- **Nightly (STATISTICAL, not yet written):** the A/B lane on ubuntu-latest (x86) AND macos-latest (arm64). R-10 is the
+- **Nightly (STATISTICAL; superseded 2026-11-12 by the dispatch-only `ab.yml`, section 5f / 6, never a nightly):** the A/B lane on ubuntu-latest (x86) AND macos-latest (arm64). R-10 is the
   point: a branchless verdict from one ARM chip says nothing about x86 branch predictors. Upload
   the logs as artifacts; the verdicts are REPORTED until a release run gates them.
 - The quiet-lock does not exist on hosted runners. Noise is handled by the interleaved A/B

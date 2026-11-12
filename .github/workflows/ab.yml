@@ -1,0 +1,161 @@
+# ab.yml -- lite-bisect A/B release gate (P3; PROPOSAL-ab section 2, RULED 2026-11-12, ROADMAP 5f).
+# STATISTICAL tier, the release gate: run ONCE per release candidate by the maintainer, never on a schedule, never in
+# `npm run verify`, never a required check. Dispatch-only, on main (GitHub needs this file on the default branch):
+#   gh workflow run ab.yml --ref main
+# Verdict per OS (the lab bench/ab-gate.mjs prints one `VERDICT ...` line and exits with it): 0 PASS | 3 FINDING |
+# 2 NO VERDICT | 1 STOP / CRASH (also NO VERDICT). The gate passes only when BOTH OS read PASS in the same dispatch.
+# A NO VERDICT run gets ONE re-dispatch (Q-AB-K (a)); a FINDING is never re-run to get the word back.
+# The lab compiles the kernels from the tracked frozen bench/research/frozen/88e5b1c-10add825/Bisect.js (full sha256
+# checked) and STOPs ANCHOR unless the live Bisect.js kernel bodies equal the frozen ones byte for byte (AB-G2).
+# Logs come back as one artifact per OS (ab-gate-<os>: provenance.log, selftest.log, gate.log, exit-code.txt):
+#   gh run download <run-id>
+# The VERDICT line of each OS is appended to the job summary.
+# The lab imports only node: builtins: no npm ci, no npm cache. Shallow checkout is fine: the lab never shells out to git.
+# No concurrency group: each hosted job is a fresh VM, and a group would cancel a pending dispatch.
+# timeout-minutes: R4 (ab-research.yml, run 43127032794) took 5m47s per job incl. a ~20 s (x86) / ~40 s (arm64) selftest
+# and a 1.5 / 2.4 min rung ALL; this lab's selftest adds 3 timed children (a K = 3 ro:16 run, two that STOP before the
+# clock) and 28 untimed fixture-verdict children (expected +15..30 s), and rung ALL adds the untimed fw variant check
+# (expected +5..15 s): expected ~7 min per job; 30 leaves ~4x headroom.
+
+name: ab
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  ab:
+    name: ab gate (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      # include-only matrix: with a base key (e.g. node: [...]) the second include entry would overwrite the first one's
+      # added keys and leave one job, so the node pin sits in each entry
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: X64
+            nodearch: x64
+            node: '26.8.2'
+          - os: macos-latest
+            arch: ARM64
+            nodearch: arm64
+            node: '26.8.2'
+    env:
+      # exactly the lab's REQUIRED_FLAGS (bench/ab-gate.mjs); the lab STOPs FLAGS on any missing one.
+      # $FLAGS is expanded UNQUOTED below on purpose: word-splitting turns it into one argv entry per flag.
+      FLAGS: --expose-gc --allow-natives-syntax --no-concurrent-recompilation --min-semi-space-size=4 --max-semi-space-size=4 --single-threaded-gc
+    steps:
+      # runner identity, fail closed, before anything else (LEDGER law 7: words do not transfer across CPUs)
+      - name: runner identity
+        env:
+          WANT_OS: ${{ matrix.os }}
+          WANT_ARCH: ${{ matrix.arch }}
+        run: |
+          : "${ImageOS:?unset}"
+          test "$RUNNER_ARCH" = "$WANT_ARCH"
+          case "$WANT_OS" in
+            ubuntu-latest) test "$RUNNER_OS" = Linux ;;
+            macos-latest) test "$RUNNER_OS" = macOS ;;
+            *) echo "unexpected matrix os: $WANT_OS"; exit 1 ;;
+          esac
+      - name: checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: setup node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          architecture: ${{ matrix.nodearch }}
+      # fail the job if setup-node resolved anything but the pin, or a node of another arch
+      - name: node is exactly the pin
+        env:
+          PIN: ${{ matrix.node }}
+          WANT_NODEARCH: ${{ matrix.nodearch }}
+        run: |
+          test "$PIN" = 26.8.2
+          test "$(node --version)" = "v$PIN"
+          test "$(node -p process.arch)" = "$WANT_NODEARCH"
+      - name: provenance
+        run: |
+          mkdir -p logs
+          echo 'none (gate not run)' > logs/exit-code.txt
+          {
+            echo "date -u: $(date -u)"
+            echo "runner image: $ImageOS $ImageVersion"
+            echo "runner: $RUNNER_OS / $RUNNER_ARCH"
+            uname -a
+            uptime
+            node -v
+            node -p "process.arch + ' ' + process.versions.v8"
+            case "$RUNNER_OS" in
+              Linux)
+                lscpu
+                echo "nproc: $(nproc)"
+                getconf -a | grep -i CACHE
+                echo "PAGESIZE: $(getconf PAGESIZE)"
+                # informational: sysfs cache entries may be absent in a VM; their absence is not a failure
+                grep . /sys/devices/system/cpu/cpu0/cache/index*/{level,type,size,coherency_line_size} || true
+                ;;
+              macOS)
+                echo "cpu: $(sysctl -n machdep.cpu.brand_string)"
+                sysctl hw.ncpu hw.cachelinesize hw.pagesize hw.l1dcachesize hw.l2cachesize
+                # informational: a key missing in the hosted VM is not a failure
+                sysctl hw.physicalcpu hw.logicalcpu hw.l1icachesize || true
+                # informational: hw.perflevel* exists only on Apple silicon; its absence is not a failure
+                sysctl -a | grep -E '^hw\.perflevel' || true
+                ;;
+              *)
+                echo "unexpected RUNNER_OS: $RUNNER_OS"
+                exit 1
+                ;;
+            esac
+          } 2>&1 | tee logs/provenance.log
+      # STOP gate: every selftest case (injections, live verdict path, fixture controls) must pass, else no gate run
+      - name: selftest
+        run: |
+          node $FLAGS bench/ab-gate.mjs --selftest 2>&1 | tee logs/selftest.log
+          grep -qx 'SELFTEST all ok' logs/selftest.log
+      # the step's status is the lab's verdict code: 0 PASS / 3 FINDING / 2 NO VERDICT / 1 STOP (recorded in exit-code.txt)
+      - name: gate (rung ALL)
+        run: |
+          set +e
+          node $FLAGS bench/ab-gate.mjs --rung ALL 2>&1 | tee logs/gate.log
+          st=("${PIPESTATUS[@]}")
+          set -e
+          echo "${st[0]}" > logs/exit-code.txt
+          # a failed tee means an incomplete log: fail the step whatever the lab returned
+          test "${st[1]}" = 0
+          exit "${st[0]}"
+      - name: verdict to the job summary
+        if: always()
+        env:
+          MOS: ${{ matrix.os }}
+        run: |
+          {
+            echo "### ab gate, $MOS (exit $(cat logs/exit-code.txt 2>/dev/null || echo 'none'))"
+            echo
+            echo '```'
+            if [ -f logs/gate.log ] && grep -q '^VERDICT ' logs/gate.log; then
+              grep '^VERDICT ' logs/gate.log
+            else
+              echo 'no VERDICT line: the gate did not run or did not finish (NO VERDICT)'
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: upload logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ab-gate-${{ matrix.os }}
+          path: logs/
+          retention-days: 30
+          if-no-files-found: error

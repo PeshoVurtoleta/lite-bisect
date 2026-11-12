@@ -437,6 +437,21 @@ on these kernels. No single green gate authorises a release.
 - **Gate:** the hosted node 22 / 24 legs of ci.yml; local revert check (old driver SIGTRAPs on v22 / v24). Reopens
   with: a supported Node whose V8 aborts on %NeverOptimizeFunction itself.
 
+### B13. The ab gate's live-path control could not see the seam, and 8 verdict checks had no control *(FOUND 2026-11-12, P3 A/B gate unit review r1 / r2; FIXED r2 / r3)*
+- **What happened:** bench/ab-gate.mjs a00955e4 claimed "one control per verdictOf check row" (law 9). Review r1: the
+  only control on the live verdict path (a clean ro:16 K=3 child) checked exit 2 + the `VERDICT NO VERDICT` prefix, so
+  the mutant `verdictOf(LOG.slice())` -> `verdictOf([])` survived by construction (an empty log is also NO VERDICT);
+  7 checks (not TIMED, HEADER unparsed (that mutant read PASS), PROV end > 1, three bop-cell checks, field()
+  uniqueness) survived their mutants with `SELFTEST all ok`. Review r2: the strict-number parse had none either; with
+  `Number(s)` an empty gated bop cell parsed as 0 and read PASS (null is not zero).
+- **Root cause:** the B5 / B7 shape a fourth time: a control whose expected outcome is also the outcome of the broken
+  path (NO VERDICT is the default) proves nothing about the path; and "one control per row" was asserted, not listed.
+- **Evidence:** .handoff/p3/BRIEF-abgate*.md; overlays .handoff/p3/overlay-abgate{,-r2,-r3}; fix: the clean child must
+  name its three reasons (rung, K, 22 missing lanes), fixture rows F29-F36 each killing its own mutant alone (untimed).
+- **Law:** 9 (none new).
+- **Gate:** `node bench/ab-gate.mjs --selftest` (ab.yml STOP gate), 38 fixture rows + 13 timed children. Reopens with: a
+  verdictOf check row added without its row.
+
 ---
 
 ## C. Measurement lessons (this package's own runs)
@@ -640,9 +655,10 @@ on these kernels. No single green gate authorises a release.
 - **Evidence:** .handoff/research/ab/PROGRESS.md R4; run on e9c6ae8 (ab-research.yml c8b4ca64); logs/r4-43127032794/ (provenance, selftest, rung-all, exit-code,
   ksub-*). REPORTED: hosted, no quiet lock, one run per OS; runner CPUs vary per dispatch.
 - **Law:** 7 (an x86 leg changed a low-margin word and the feeds-write size); none new.
-- **Gate:** none yet; the ab.yml gate unit (PROPOSAL-ab, ruled). Consequence for it: the R0 lab's exit 2 fires on any
-  kill-rule VOID (walk:256:1 included), which would make this dispatch NO VERDICT on macOS; the gate lab must scope its
-  verdict to the 13 gated lanes. Reopens with: a gated lane reading another word on a release dispatch; a runner CPU
+- **Gate:** .github/workflows/ab.yml + bench/ab-gate.mjs (P3 A/B gate unit, 2026-11-12; STATISTICAL, not yet dispatched).
+  Consequence applied there: the R0 lab's exit 2 fired on any kill-rule VOID (walk:256:1 included), which would make this
+  dispatch NO VERDICT on macOS; the gate lab scopes its verdict and exit to the 13 gated lanes (its fixture F2 is this
+  run's macOS log and reads PASS). Reopens with: a gated lane reading another word on a release dispatch; a runner CPU
   family not seen here.
 
 ---
