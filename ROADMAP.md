@@ -446,8 +446,11 @@ release, once the A/B result (P3-R1) is known. Each item names its trigger and w
    notices). Trigger: a new Node major or a pinned-Node retirement in CI. Needs a written procedure first: the
    recut rule (~/.claude/CLAUDE.md: run the live lane, any UNEXPLAINED failure stops the recut), new pins named
    by commit + sha, docs claims re-tiered. A small planner pass, then one coder unit.
-4. **LiteUtils gates into hosted CI (P1-R1).** Trigger: LiteUtils 1.0 on npm. Add `@zakkster/lite-utils`
-   `^1.0.0` (devDependency) and move `gates` into ci.yml. (A green `gates` run is still needed BEFORE 1.0.)
+4. **LiteUtils gates into hosted CI (P1-R1).** Trigger: LiteUtils 1.1.0 on npm (updated 2026-11-12: 1.0.0 is
+   published but ships only the five .sh tools; alloc-per-op.mjs was an untracked file in the LiteUtils checkout,
+   and the maintainer puts it in 1.1.0 as top priority, work starting Saturday 2026-11-14). Then add
+   `@zakkster/lite-utils` as a devDependency (floor ^1.1.0, the first release with the tool: a Q-LU-1a amendment
+   to ask) and move `gates` into ci.yml. (A green `gates` run is still needed BEFORE 1.0.)
 5. **REPORTED n-sweep tables (P3-R1).** A 1.0.x docs-only release with provenance; gates nothing.
    - Method (Drepper, "What Every Programmer Should Know About Memory", 2007; principles, not its numbers): a
      working-set sweep, with n points placed on EACH host's own boundaries (L1D, L2, LLC, TLB reach = TLB
