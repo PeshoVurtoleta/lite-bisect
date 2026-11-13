@@ -23,7 +23,9 @@
 // Harness (P1-R12): each run also measures the bench's empty lane 'harness.empty' ((i) => {}, same flags, same
 // tool invocation). If it reads > 1.0 B/op in ANY window 1..5 the run is NO VERDICT (harness-noisy) = FAIL:
 // never a pass, never a subtraction; thresholds unchanged. P1-R11: run B carries --no-maglev-inlining.
-// Controls (law 9): a lane that boxes only from window 3 FAILS here and PASSES the tool's STEADY --max;
+// Controls (law 9): a lane that boxes only from window 3 FAILS here; the tool's own --max 1 gate on it is
+// keyed on the tool's --json `signal` (Q-AP-LB (a), LiteUtils LEDGER #128, a field never a version): absent = the old
+// STEADY tool, exit 0 + PASS; "space-used-paired" = the new PEAK tool, exit 1 + FAIL; any other = NO VERDICT;
 // a never-optimized lane is refused by the tier check; run A's numbers fail run B's floor and run B's
 // numbers fail run A's ceiling; a broken calibration / a missing flag / a missing tier file / a noisy or
 // missing empty lane is NO VERDICT; a missing or extra lane row, or a non-number window (the tool's --json
@@ -144,6 +146,43 @@ export function judge(rows, expect, tier) {
     };
 }
 
+// ---- C-late3: the tool's own --max gate (Q-AP-LB (a)) -------------------------------------------
+// Typed from the ruling, never read from a run (law 9). Keyed on the --json `signal` field only.
+const LATE_PAIRED = 'space-used-paired';
+const LATE_OLD_EXIT = 0;
+const LATE_OLD_LINE = /gate --max 1 \(steady B\/op\): PASS/;
+const LATE_NEW_EXIT = 1;
+const LATE_NEW_LINE = /gate --max 1 \(peak B\/op\): FAIL/;
+
+/** The ONLY place the C-late3 tool-gate expectation is decided. json = the row's --json run; status /
+ *  stdout = the tool's --max 1 run. verdict 'ok' | 'FAIL' | 'NO VERDICT'; null signal is not absent. */
+export function lateGateVerdict(json, status, stdout) {
+    if (json === null || typeof json !== 'object' || Array.isArray(json)) {
+        return { verdict: 'NO VERDICT', branch: 'none', reason: '--json is not an object (' + (json === null ? 'null' : Array.isArray(json) ? 'array' : typeof json) + ')' };
+    }
+    if (!Object.hasOwn(json, 'signal')) {
+        const ok = status === LATE_OLD_EXIT && typeof stdout === 'string' && LATE_OLD_LINE.test(stdout);
+        return { verdict: ok ? 'ok' : 'FAIL', branch: 'absent (old STEADY tool)',
+            reason: ok ? null : 'expected exit ' + LATE_OLD_EXIT + ' + ' + LATE_OLD_LINE.source + ', got exit ' + status };
+    }
+    const sig = json.signal;
+    if (typeof sig === 'string' && sig === LATE_PAIRED) {
+        const ok = status === LATE_NEW_EXIT && typeof stdout === 'string' && LATE_NEW_LINE.test(stdout);
+        return { verdict: ok ? 'ok' : 'FAIL', branch: LATE_PAIRED + ' (new PEAK tool)',
+            reason: ok ? null : 'expected exit ' + LATE_NEW_EXIT + ' + ' + LATE_NEW_LINE.source + ', got exit ' + status };
+    }
+    let shown;
+    try { shown = typeof sig + ' ' + JSON.stringify(sig); } catch { shown = typeof sig; }
+    return { verdict: 'NO VERDICT', branch: 'unknown', reason: 'unknown --json signal (' + shown + ')' };
+}
+
+/** The C-late3 row verdict: lateGateVerdict, then THROW unless 'ok' (message starts with the verdict word). */
+export function lateGateRow(json, status, stdout) {
+    const v = lateGateVerdict(json, status, stdout);
+    if (v.verdict !== 'ok') throw new Error(v.verdict + ': C-late3 tool gate (' + v.branch + '): ' + v.reason);
+    return v;
+}
+
 // ---- runner -------------------------------------------------------------------------------------
 function runAlloc(bench, flags, { lanes = [], env = {}, extra = [] } = {}) {
     const args = [...flags, LU.tools['alloc-per-op.mjs'], '--n', String(N), '--windows', String(K), '--warm', String(WARM),
@@ -230,7 +269,7 @@ test('assertion 9b: --no-turbo-inlining --no-maglev-inlining, frac / big / nan /
 });
 
 // ---- controls -------------------------------------------------------------------------------------
-test('control: a lane that boxes only from window 3 FAILS the per-window gate, and PASSES the tool STEADY --max 1 (D2)', () => {
+test('control: a lane that boxes only from window 3 FAILS the per-window gate; the tool --max 1 gate reads as its --json signal says (absent = STEADY PASS, space-used-paired = PEAK FAIL, other = NO VERDICT) (D2, Q-AP-LB)', () => {
     needLU();
     const dir = mkdtempSync(join(TMP, 'late3-'));
     const bench = join(dir, 'late3-bench.mjs');
@@ -254,11 +293,108 @@ test('control: a lane that boxes only from window 3 FAILS the per-window gate, a
     const late = j.rows.find((r) => r.lane === 'late3');
     assert.ok(late.windows[1] <= INLINED_MAX && late.windows[2] <= INLINED_MAX, 'windows 1-2 clean: ' + late.windows);
     assert.ok(late.windows[3] >= BOX_MIN && late.windows[4] >= BOX_MIN && late.windows[5] >= BOX_MIN, 'windows 3-5 box: ' + late.windows);
-    // The same run through the tool's own STEADY gate: PASS (exit 0) -- the gate this file refuses to use.
+    // The same bench through the tool's own --max gate (the gate this file refuses to use). What it must
+    // read is decided ONLY by lateGateRow (= lateGateVerdict + throw unless ok), keyed on the --json run's `signal` (Q-AP-LB (a)).
     const s = runAlloc(bench, FLAGS_A, { extra: ['--max', String(INLINED_MAX)] });
-    console.log('# C-late3 tool --max ' + INLINED_MAX + ' (STEADY) exit ' + s.status + ': ' + s.stdout.trim().split('\n').pop());
-    assert.equal(s.status, 0, 'tool STEADY gate did not PASS the late lane: ' + s.stdout + s.stderr);
-    assert.match(s.stdout, /gate --max 1 \(steady B\/op\): PASS/);
+    if (s.timedOut || s.signal !== null) assert.fail('NO VERDICT: alloc-per-op --max killed (' + (s.signal || 'timeout') + '): ' + s.cmd);
+    let live = null;
+    let err = null;
+    try { live = lateGateRow(j.json, s.status, s.stdout); } catch (e) { err = e; }
+    const hasSig = j.json !== null && typeof j.json === 'object' && Object.hasOwn(j.json, 'signal');
+    const gateLine = String(s.stdout).split('\n').filter((l) => /gate --max/.test(l)).pop() || ('(no gate line) ' + String(s.stdout).trim().split('\n').pop());
+    console.log('# C-late3 tool --max ' + INLINED_MAX + ' signal ' + (hasSig ? JSON.stringify(j.json.signal) : 'absent') + ' exit ' + s.status + ' ' +
+        (err ? String(err.message) : 'ok branch ' + live.branch) + ' | ' + gateLine);
+    if (err) throw err;
+    // B5 / B7: clones of the REAL --json + the live --max run, through the same decision function. The live
+    // row passed its own branch above, so the OTHER branch's exit / words cannot match (expectations typed
+    // from the ruling, never from lateGateVerdict): live old tool -> deleted ok, paired FAIL; live new tool ->
+    // deleted FAIL, paired ok; unknown string / null -> NO VERDICT either way.
+    const liveOld = !hasSig;
+    const clone = () => JSON.parse(JSON.stringify(j.json));
+    const cDel = clone(); delete cDel.signal;
+    const cPaired = clone(); cPaired.signal = LATE_PAIRED;
+    const cUnknown = clone(); cUnknown.signal = 'total-allocated';
+    const cNull = clone(); cNull.signal = null;
+    const clones = [
+        ['signal deleted', cDel, liveOld ? 'ok' : 'FAIL'],
+        ['signal "space-used-paired"', cPaired, liveOld ? 'FAIL' : 'ok'],
+        ['signal "total-allocated"', cUnknown, 'NO VERDICT'],
+        ['signal null', cNull, 'NO VERDICT'],
+    ];
+    const got = clones.map(([tag, json, want]) => [tag, lateGateVerdict(json, s.status, s.stdout).verdict, want]);
+    console.log('# C-late3 live clones (' + (liveOld ? 'old tool' : 'new tool') + '): ' + got.map(([t, g, w]) => t + ' -> ' + g + ' (want ' + w + ')').join(' | '));
+    for (const [tag, g, w] of got) assert.equal(g, w, 'live clone ' + tag + ': got ' + g + ', want ' + w);
+});
+
+test('control: lateGateVerdict -- the C-late3 tool-gate expectation keyed on the --json signal field (planted pairs, runs without LiteUtils)', () => {
+    const viaJson = (x) => JSON.parse(JSON.stringify(x));
+    const OLD_PASS = 'gate --max 1 (steady B/op): PASS';
+    const OLD_FAIL = 'gate --max 1 (steady B/op): FAIL (late3)';
+    const NEW_FAIL = 'gate --max 1 (peak B/op): FAIL (late3)';
+    const NEW_PASS = 'gate --max 1 (peak B/op): PASS';
+    const NEW_NV = 'gate --max 1 (peak B/op): NO VERDICT (within band +-0.5)';
+    const base = { n: N, windows: K, benches: [{ rows: [] }] };
+    const absent = viaJson(base);
+    const sig = (v) => viaJson({ ...base, signal: v });
+    // [tag, json, status, stdout, want]
+    const cases = [
+        ['absent + exit 0 + steady PASS', absent, 0, 'floor\n\n' + OLD_PASS + '\n', 'ok'],
+        ['paired + exit 1 + peak FAIL', sig(LATE_PAIRED), 1, 'floor\n\n' + NEW_FAIL + '\n', 'ok'],
+        // (a) signal absent but the tool says FAIL
+        ['absent + exit 1 + steady FAIL', absent, 1, OLD_FAIL, 'FAIL'],
+        ['absent + exit 0 + steady FAIL', absent, 0, OLD_FAIL, 'FAIL'],
+        ['absent + exit 1 + steady PASS', absent, 1, OLD_PASS, 'FAIL'],
+        ['absent + exit 0 + peak PASS', absent, 0, NEW_PASS, 'FAIL'],
+        ['absent + exit 1 + peak FAIL', absent, 1, NEW_FAIL, 'FAIL'],
+        // (b) paired but exit 0
+        ['paired + exit 0 + peak PASS', sig(LATE_PAIRED), 0, NEW_PASS, 'FAIL'],
+        ['paired + exit 0 + peak FAIL', sig(LATE_PAIRED), 0, NEW_FAIL, 'FAIL'],
+        ['paired + exit 1 + steady FAIL (old words)', sig(LATE_PAIRED), 1, OLD_FAIL, 'FAIL'],
+        ['paired + exit 0 + steady PASS (old pair)', sig(LATE_PAIRED), 0, OLD_PASS, 'FAIL'],
+        ['paired + exit 2 + peak NO VERDICT', sig(LATE_PAIRED), 2, NEW_NV, 'FAIL'],
+        ['paired + exit null (killed) + peak FAIL', sig(LATE_PAIRED), null, NEW_FAIL, 'FAIL'],
+        ['paired + exit "1" + peak FAIL', sig(LATE_PAIRED), '1', NEW_FAIL, 'FAIL'],
+        ['absent + exit "0" + steady PASS', absent, '0', OLD_PASS, 'FAIL'],
+        ['paired + exit 1 + peak PASS', sig(LATE_PAIRED), 1, NEW_PASS, 'FAIL'],
+        ['paired + exit 1 + peak NO VERDICT', sig(LATE_PAIRED), 1, NEW_NV, 'FAIL'],
+        ['absent + exit 0 + stdout not a string', absent, 0, [OLD_PASS], 'FAIL'],
+        ['paired + exit 1 + stdout not a string', sig(LATE_PAIRED), 1, [NEW_FAIL], 'FAIL'],
+        ['absent + exit 0 + steady PASS at --max 2', absent, 0, 'gate --max 2 (steady B/op): PASS', 'FAIL'],
+        ['paired + exit 1 + peak FAIL at --max 2', sig(LATE_PAIRED), 1, 'gate --max 2 (peak B/op): FAIL (late3)', 'FAIL'],
+    ];
+    // (c) unknown string signals and (d) non-string signals: NO VERDICT with EITHER tool's passing pair
+    for (const v of ['total-allocated', '', 'Space-Used-Paired', 'space-used-paired ', null, 1, 0, true, false, [LATE_PAIRED], {}, { signal: LATE_PAIRED }]) {
+        const t = 'signal ' + JSON.stringify(v);
+        cases.push([t + ' + old PASS pair', sig(v), 0, OLD_PASS, 'NO VERDICT']);
+        cases.push([t + ' + new FAIL pair', sig(v), 1, NEW_FAIL, 'NO VERDICT']);
+    }
+    // not representable in JSON (passed as is): a present key holding undefined, a NaN that JSON makes null
+    const undef = { ...absent, signal: undefined };
+    cases.push(['signal present = undefined + old PASS pair', undef, 0, OLD_PASS, 'NO VERDICT']);
+    cases.push(['signal present = undefined + new FAIL pair', undef, 1, NEW_FAIL, 'NO VERDICT']);
+    cases.push(['signal NaN via JSON (null) + old PASS pair', sig(NaN), 0, OLD_PASS, 'NO VERDICT']);
+    // the json itself is not an object
+    for (const [t, v] of [['null', null], ['string', 'space-used-paired'], ['number', 0], ['array', []], ['undefined', undefined]]) {
+        cases.push(['json ' + t + ' + old PASS pair', v === undefined ? v : viaJson(v), 0, OLD_PASS, 'NO VERDICT']);
+        cases.push(['json ' + t + ' + new FAIL pair', v === undefined ? v : viaJson(v), 1, NEW_FAIL, 'NO VERDICT']);
+    }
+    assert.equal(Object.hasOwn(sig(null), 'signal'), true, 'JSON keeps a null signal as a present key');
+    assert.equal(Object.hasOwn(absent, 'signal'), false);
+    const bad = [];
+    for (const [tag, json, status, stdout, want] of cases) {
+        const v = lateGateVerdict(json, status, stdout);
+        if (v.verdict !== want) bad.push(tag + ': got ' + v.verdict + ' (' + v.branch + '), want ' + want);
+        else if (want !== 'ok' && typeof v.reason !== 'string') bad.push(tag + ': ' + v.verdict + ' with no reason');
+    }
+    console.log('# C-late3-decide ' + cases.length + ' planted pairs, ' + bad.length + ' wrong');
+    assert.deepEqual(bad, []);
+    // N1: the row verdict itself (the live row calls lateGateRow and nothing else): ok returns, else throws "<want>: ".
+    for (const [tag, json, status, stdout, want] of cases) {
+        if (want === 'ok') assert.doesNotThrow(() => lateGateRow(json, status, stdout), 'lateGateRow ' + tag);
+        else assert.throws(() => lateGateRow(json, status, stdout), { message: new RegExp('^' + want + ': ') }, 'lateGateRow ' + tag);
+    }
+    const nv = lateGateVerdict(sig('total-allocated'), 0, OLD_PASS);
+    assert.match(nv.verdict + ': ' + nv.reason, /^NO VERDICT: unknown --json signal/);
 });
 
 test('control: a never-optimized lane in run B is refused by the tier check (law 8)', () => {

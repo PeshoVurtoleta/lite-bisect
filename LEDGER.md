@@ -452,6 +452,25 @@ on these kernels. No single green gate authorises a release.
 - **Gate:** `node bench/ab-gate.mjs --selftest` (ab.yml STOP gate), 38 fixture rows + 13 timed children. Reopens with: a
   verdictOf check row added without its row.
 
+### B14. The field-keyed C-late3 table controlled one half of each branch, and the row's own ok test none *(FOUND 2026-11-13, CLATE3 review r1; FIXED r2)*
+- **What happened:** test/gates/alloc.test.mjs 104e6094 keyed C-late3's tool-gate expectation on the --json `signal`
+  field (LiteUtils ruling Q-AP-LB (a)) through one decision, lateGateVerdict, with 52 planted pairs, 0 wrong. Review r1
+  mutants survived every row: the paired regex without its `FAIL` word (no paired + exit 1 + wrong-words pair), the
+  `typeof stdout === 'string'` check in either branch (no non-string stdout pair), `gate --max 1 ` dropped from the old
+  regex (no other --max pair), and the live row's own `=== 'ok'` test weakened to `!== 'FAIL'` (an unknown live signal
+  then passed: nothing fed that line).
+- **Root cause:** the B5 / B7 / B13 shape a fifth time: each branch is a conjunction (exit AND words), and the table
+  planted a miss of only one conjunct per branch; the row's last comparison sat outside the shared decision code.
+- **Evidence:** .handoff/clate3/overlay-r1, overlay-r2, evidence/gates-local-r2.txt; fix: 6 pairs (58 in all), and
+  the row decides only through the exported lateGateRow, which throws `<verdict>: ...` unless ok and is fed every
+  planted pair. Revert check: the old logic as the decision reads 40 of 58 pairs wrong.
+- **Law:** 9 (none new): a conjunction needs a control per conjunct.
+- **Gate:** `npm run gates:local`, test "control: lateGateVerdict ..." (needs no LiteUtils). Carried open (r2 NIT): the
+  live row's call site (deleting its `throw`, or calling lateGateVerdict instead) survives an unknown live signal; one
+  clone row `['live --json as read', clone(), 'ok']` would make it a two-change bypass (the case B5 carries open)
+  (NEXT.md FILLERS). Reopens with: the first
+  lite-utils 1.1.0 run reading other than PASS on this row.
+
 ---
 
 ## C. Measurement lessons (this package's own runs)
