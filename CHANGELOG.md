@@ -24,12 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The allocation statement: zero allocation where the kernel inlines into its caller, or every number
   argument (the query; the hint of lowerBoundHint*; lo / hi) is a Smi; a non-Smi number computed at run
   time or read from a typed array (a fractional query, a NaN hint read from a Float64Array, -0 for lo / hi)
-  and passed across a call V8 does not inline is boxed by the caller: one 16 B HeapNumber per call on Node.
+  and passed across a call V8 does not inline is boxed by the caller: one 16 B HeapNumber per such argument on Node.
   For no hint pass lo or the literal NaN: neither boxes.
 - Hand-written TypeScript declarations (`Bisect.d.ts`), checked by tsc 7.0.2 in node16 / nodenext /
   bundler resolution and by a parity test against the runtime exports; `npm run test:types`.
 - Kernels generated from one template (`scripts/gen.mjs`); `npm run gen:check` verifies the generated region.
-- Gates: a naive-reference oracle per type (4 seeds), a boundary table, mutant kills (103 rows), a torture
+- Gates: a naive-reference oracle per type (4 seeds), a boundary table, mutant kills (106 rows), a torture
   run with a retained-heap gate, c8 coverage at 100% lines / branches, golden parity, a TurboFan inline pin
   (traced per kernel x type, pinned Node), alloc and bytecode gates (`npm run gates` on the devDependency `@zakkster/lite-utils` ^1.1.0, run by the
   ci.yml `gates` job; `npm run gates:local` on a LiteUtils checkout; pinned Node only; not in `npm test`), tsc type checks, a doc-truth test, and a size / pack gate (`npm run size`: the tarball file list and
@@ -56,8 +56,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wins (exit 1); a test-only LITE_BISECT_TORTURE_STALL_MS hook drives the must-fail controls.
 - R-LLMS-SNIPPETS: the `llms.txt` usage results are checked `// -> n` lines; the docs test runs the
   `llms.txt` js fences and fails on a bare `// <number>` result comment in README / `llms.txt`.
-- BIS-neon-8: assertRange / assertSorted throw RangeError on a non-number or unsafe a.length and on unsafe
-  lo / hi; every call on the five typed arrays keeps its result and message (parity). gen.mjs refuses
+- BIS-neon-1: the nearest oracle (`test/oracle.mjs`) and the mutant gate had no +-Infinity, so a flipped
+  `d < u` in `nearestF32` / `nearestF64` (wrong on an exact +Infinity match) and the F64 overflow guard removed
+  survived. The oracle now answers F64 / F32 infinity groups by its own rule; three mutant rows
+  (`nearest.inf-gt.F64`, `nearest.inf-gt.F32`, `nearest.au-r1a.F64`; 106 rows) are KILLED;
+  `test/Bisect.nearest-exact.test.mjs` runs its Infinity rows on F32 too. Test-only: no kernel byte changed.
+- BIS-neon-2: `bench/ab-gate.mjs` (the ab.yml release verdict) read VERDICT PASS on a negative bop cell, a NaN
+  `aa.q1` / `aa.q3` / `slow.q3`, a tampered HEADER `NQ2` / `minWindow`, and a dropped or doubled `PROV start`
+  line. It now needs finite medians and quartiles, every bop cell `>= 0`, `NQ2` and `minWindow` equal to the
+  gate's own, and exactly one `PROV start`; `--selftest` with `--K` is refused. Fixture controls F37-F45.
+- BIS-neon-3: the alloc gate's empty-lane harness check had no floor; a negative window now reads NO VERDICT
+  ("outside [0, 1] B/op").
+- BIS-neon-4: `test/gates/lu.mjs` (the LiteUtils tool resolver) now checks the package name (env dir and
+  installed), requires a `LITE_UTILS_DIR` to be its own git top level (a parent repo's commit is refused),
+  compares real paths in its CLI guard (a symlinked path no longer skips the CLI), and runs git without
+  `GIT_DIR` / `GIT_INDEX_FILE` / `GIT_WORK_TREE`.
+- BIS-neon-5: the doc-truth test (`test/Bisect.docs.test.mjs`) failed open: a `.md` cited with a `./`, `../` or
+  `dir/` prefix was invisible; the pointer sentence excused every unshipped `.md`; README and `llms.txt` speed
+  words were unchecked; and a following block could lend its tier word. Cited paths are now checked as written
+  against `files[]`; the pointer sentence excuses only the LEDGER and RESEARCH files; README and `llms.txt` join
+  the speed check, which splits at sentences, paragraphs, JSDoc open / close, list items and table cells and
+  exempts only a quoted, negated speed word naming a statement (`no "faster than" statement`). Three README / `llms.txt` speed sentences that
+  took their tier from the next sentence now carry it themselves (same evidence, PRELIMINARY).
+- BIS-neon-7: `package.json` had no `repository` while README and `llms.txt` point to the source repository:
+  `repository` added (NEON-R2), and a docs row requires it whenever a shipped doc holds the pointer sentence.
+  README offered `lowerBoundHintF64` as the hint for the `segmentF64` playhead; it answers a lower bound, not a
+  segment (checked lines added; there is no `segmentHint*` export). README counts and provenance refreshed from
+  this cycle's runs.
+- BIS-neon-8: `assertRange` / `assertSorted` throw RangeError on a non-number or unsafe `a.length` and on unsafe
+  lo / hi; every call on the five typed arrays keeps its result and message (parity). `gen.mjs` refuses
   trailing text after the end marker.
 
 ### Changed
@@ -69,6 +96,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   repository, not the npm tarball; a docs row checks every cited `<NAME>.md`.
 - R-DTS-TIER: the `lowerBoundHint*` declarations say the incoherent-stream slowdown is PRELIMINARY
   (one CPU, no timing lane gated); a docs row fails an untiered "slower" / "faster" in `Bisect.d.ts`.
+- NEON-R1 (BIS-neon-6; amends AU-R3 / R-NANHINT-BOX): the allocation sentence said "one 16 B HeapNumber per
+  call"; two non-Smi arguments across a call V8 does not inline box 2 x 16 B, so it now says "one 16 B
+  HeapNumber per such argument on Node" in `Bisect.js`, `Bisect.d.ts`, README, `llms.txt` and the docs-test
+  literal; README's allocation table says one box per non-Smi argument and gains a two-argument row. Gated by
+  the alloc lanes `lowerBoundHint*.fracnanhint` (fractional query and NaN hint, both read from Float64Arrays):
+  run B 28..36 B/op, run A the floor.
 
 ### Not shipped from the draft
 

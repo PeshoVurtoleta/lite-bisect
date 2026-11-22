@@ -17,7 +17,7 @@
  *             equal values, the index next to x; an empty range -> lo, NaN -> lo.
  *   A NaN query compares false everywhere: every lower / upper / hint kernel returns lo.
  *
- * Allocation: zero allocation where the kernel inlines into its caller, or every number argument (the query; the hint of lowerBoundHint*; lo / hi) is a Smi; a non-Smi number computed at run time or read from a typed array (a fractional query, a NaN hint read from a Float64Array, -0 for lo / hi) and passed across a call V8 does not inline is boxed by the caller: one 16 B HeapNumber per call on Node. For no hint pass lo or the literal NaN: neither boxes.
+ * Allocation: zero allocation where the kernel inlines into its caller, or every number argument (the query; the hint of lowerBoundHint*; lo / hi) is a Smi; a non-Smi number computed at run time or read from a typed array (a fractional query, a NaN hint read from a Float64Array, -0 for lo / hi) and passed across a call V8 does not inline is boxed by the caller: one 16 B HeapNumber per such argument on Node. For no hint pass lo or the literal NaN: neither boxes.
  *
  * The hot kernels trust the caller: no range check, no throw. A range outside the
  * contract may return a wrong index or never return. The cold checks assertRange(a, lo, hi) and

@@ -45,7 +45,7 @@ Kernel signature: (a, lo, hi, x) => number. The hint kernel adds h.
 
 ## Allocation
 
-zero allocation where the kernel inlines into its caller, or every number argument (the query; the hint of lowerBoundHint*; lo / hi) is a Smi; a non-Smi number computed at run time or read from a typed array (a fractional query, a NaN hint read from a Float64Array, -0 for lo / hi) and passed across a call V8 does not inline is boxed by the caller: one 16 B HeapNumber per call on Node. For no hint pass lo or the literal NaN: neither boxes.
+zero allocation where the kernel inlines into its caller, or every number argument (the query; the hint of lowerBoundHint*; lo / hi) is a Smi; a non-Smi number computed at run time or read from a typed array (a fractional query, a NaN hint read from a Float64Array, -0 for lo / hi) and passed across a call V8 does not inline is boxed by the caller: one 16 B HeapNumber per such argument on Node. For no hint pass lo or the literal NaN: neither boxes.
 
 Pass a Smi query, and h = lo (or the literal NaN) instead of a NaN read at run time, when a kernel sits across a call V8 does not inline.
 
@@ -59,8 +59,9 @@ LEDGER and RESEARCH ids refer to LEDGER.md and RESEARCH.md in the source reposit
 - lowerBoundBranchy* / upperBoundBranchy*: the result feeds a write (an insert position, a splice
   index). Evidence I1 is inherited from another package and not re-run here: unproven for this package, no gate.
 - lowerBoundHint*: coherent query streams (each query near the previous answer). Slower on
-  incoherent streams; see RESEARCH.md 1.5. The timing evidence is PRELIMINARY (one CPU, Apple M4 Pro) and the
-  STATISTICAL lane is pending; no timing number is claimed.
+  incoherent streams (PRELIMINARY: one CPU, Apple M4 Pro; see RESEARCH.md 1.5); the STATISTICAL
+  lane is pending and no timing number is claimed. It answers a lower bound (first a[i] >= x),
+  not a segment (upper - 1); there is no segmentHint* export.
 - segment* / nearest*: "which interval holds x" / "which key is closest to x".
 - assertRange / assertSorted: setup and tests only.
 - Call the per-type kernel by name. One call site fed several array types goes megamorphic
@@ -80,7 +81,7 @@ const n = nearestF64(a, 0, 5, 4);                // -> 2
 
 ## Gates (deterministic unless stated)
 
-oracle per type (4 seeds), boundary table, mutants (103 rows, all killed), torture with a
+oracle per type (4 seeds), boundary table, mutants (106 rows, all killed), torture with a
 retained-heap gate, c8 100% lines / branches, golden parity of the generated kernels, a TurboFan
 inline pin, tsc type checks (node16 / nodenext / bundler) with an export-parity test, a doc-truth
 test. Tree-shaking is gated under esbuild 0.28 only (one-kernel bundles carry that kernel plus its callees and no other top-level code; sideEffects: false honoured); webpack / rollup not tested. The size / pack gate (npm run size: pack file list + committed budgets) and npm run verify (test + torture + coverage + size + gates:local) are deterministic but outside npm test. The alloc + bytecode gates (npm run gates: the installed @zakkster/lite-utils ^1.1.0 tools; npm run gates:local: a LiteUtils checkout via LITE_UTILS_DIR) run on the pinned Node

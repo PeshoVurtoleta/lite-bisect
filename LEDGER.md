@@ -462,7 +462,7 @@ on these kernels. No single green gate authorises a release.
 - **Evidence:** .handoff/p3/BRIEF-abgate*.md; overlays .handoff/p3/overlay-abgate{,-r2,-r3}; fix: the clean child must
   name its three reasons (rung, K, 22 missing lanes), fixture rows F29-F36 each killing its own mutant alone (untimed).
 - **Law:** 9 (none new).
-- **Gate:** `node bench/ab-gate.mjs --selftest` (ab.yml STOP gate), 38 fixture rows + 13 timed children. Reopens with: a
+- **Gate:** `node bench/ab-gate.mjs --selftest` (ab.yml STOP gate), 47 fixture rows (2 sha pins + F1-F45) + 13 timed children. Reopens with: a
   verdictOf check row added without its row.
 
 ### B14. The field-keyed C-late3 table controlled one half of each branch, and the row's own ok test none *(FOUND 2026-11-13, CLATE3 review r1; FIXED r2)*
@@ -560,7 +560,7 @@ on these kernels. No single green gate authorises a release.
   samples taken before settle, so an unflagged + undrained retain control reads UNDRAINED (NO VERDICT) per the spec
   where FAIL would be stronger; fail-closed either way. RULED 2026-11-22: NF-R3 "Keep NO VERDICT (as ruled)" (ROADMAP 5i).
 
-### B17. Four gates failed open on forged or out-of-domain input; one oracle had no infinity *(FOUND 2026-11-22, independent audit "neon"; CONFIRMED 8 / 8 on cf1b677; RULED NEON-R1..R3; FIXED 2026-11-23 in the working tree, batches A / B / C / E APPROVED; docs batch D pending)*
+### B17. Four gates failed open on forged or out-of-domain input; one oracle had no infinity *(FOUND 2026-11-22, independent audit "neon"; CONFIRMED 8 / 8 on cf1b677; RULED NEON-R1..R3; FIXED (committed c883d19 / 08d45c6 / 46efea9 / bc425e6; docs D <pending>))*
 - **What happened:** (neon-2) `bench/ab-gate.mjs --verdict-file` read exit 0 VERDICT PASS on both pinned R4 fixtures for a
   negative bop cell, NaN aa.q1 / aa.q3 / slow.q3, HEADER NQ2=1 minWindow=1, and a dropped or doubled PROV start line -- the
   ab.yml release verdict. (neon-3) the alloc gate's emptyCheck had no lower bound (judge() null for -0.5 / -5). (neon-4)
@@ -582,6 +582,26 @@ on these kernels. No single green gate authorises a release.
   judge control + the fracnanhint lane (NEON-R1); mutants.json 106 rows (nearest.inf-gt.F64 / F32, nearest.au-r1a.F64);
   oracle INF_GROUPS; test/gen.test.mjs END rows; test/Bisect.boundary.test.mjs assertRange rows. Reopens with: a verdict
   field read without both bounds; an oracle phase whose values miss part of the documented domain.
+
+### B18. A red ab.yml selftest row could not be diagnosed: the child's RESULT line was discarded *(FOUND 2026-11-23, ab.yml run 45079558712 macOS; UNEXPLAINED; RULED ABDIAG-R1 "Observability, then re-dispatch (Recommended)"; fix pending)*
+- **What happened:** on the Apple M1 (Virtual) leg, the selftest's must-fail timed control `slow-dead AB2 fw:128` printed no
+  `VOID SLOW-DEAD` (`SELFTEST 1 FAIL`; the gate step was skipped; ubuntu read VERDICT PASS gated=13/13). That K = 3 child read
+  `VOID (AA-DRIFT)` only: an unspinned A-twin passed slowOk (med > 1.25, q1 > 1.10 vs A). The 11-12 dispatch 43145179770
+  passed the same control on both legs.
+- **Root cause:** UNEXPLAINED. The lead "SLOW shares A's block on a lane that mutates it" is DISPROVEN by reading the code:
+  makeCols' `a` is kernel source text (block(), bench/ab-gate.mjs:262), and every column x copy is a fresh `new Function`
+  with its own `lane.a.slice()` (buildEntry). The noise lead is unproven: K = 3 with column-major entries rotated one step
+  per round keeps each column at nearly the same in-round positions, so one host stall can hit SLOW in 2 of 3 rounds.
+  The defect found: a FAILing timed row replays only the child's last 8 lines (:1155). The uploaded logs artifact is a tee
+  of the same stdout, so no CI artifact holds the RESULT / RAW lines.
+- **Evidence:** .handoff/abdiag/DIAG.md; job log .handoff/audit-neon/ab/run-45079558712.log:875-882; local repro
+  .handoff/abdiag/slowdead-fw128-local.txt (PRELIMINARY: Apple M4 Pro, node v26.8.2, load1 11.67 -> 11.91, quiet-lock run,
+  8 children: 8 / 8 VOID SLOW-DEAD, per-round SLOW/A 0.86..1.12, per-round AA up to 1.65 / down to 0.67).
+- **Law:** 9 extended to a failing control. A control that fails must leave the numbers it failed on in the uploaded logs,
+  otherwise its red run is a finding nobody can diagnose.
+- **Gate:** none yet (ABDIAG-R1: a coder unit replays the failing child's RESULT / RAW / VOID lines, plus a selftest row;
+  then one ab.yml re-dispatch). Reopens with: a second red on any selftest control after that fix, read from its replayed
+  lines.
 
 ---
 

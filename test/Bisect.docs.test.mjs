@@ -21,9 +21,20 @@
 //   ascii       0 code points above U+007F in all five, except U+00D7 and U+00B5.
 //   bare        (AU-R4) README.md / llms.txt: no js-fence line carries a bare `// <number>` result comment (the
 //               checked form is `// -> <literal>`).
-//   cite        (AU-R6) every `<NAME>.md` cited in README.md / llms.txt / CHANGELOG.md / Bisect.d.ts is in
-//               package.json files[], or that file holds the pointer sentence (PTR below).
-//   speed       (AU-R7) Bisect.d.ts: a sentence with "slower" / "faster" holds PRELIMINARY, STATISTICAL or REPORTED.
+//   cite        (AU-R6, neon-5) every `.md` path cited in README.md / llms.txt / CHANGELOG.md / Bisect.d.ts, as
+//               written (`NAME.md`, `./NAME.md`, `../NAME.md`, `dir/NAME.md`, `/NAME.md`, `~/NAME.md`; leading `./`
+//               dropped), is in package.json files[]; a file that holds the pointer sentence (PTR below) may also cite LEDGER.md and
+//               RESEARCH.md, nothing else. A URL (scheme://) is not a file citation.
+//   repo        (NEON-R2) a shipped doc (in files[]) that holds PTR needs a non-empty package.json repository (a
+//               string, or an object with a non-empty url): PTR points the reader at that repository.
+//   speed       (AU-R7, neon-5) Bisect.d.ts, README.md, llms.txt: every sentence with "slower" / "faster" holds
+//               PRELIMINARY, STATISTICAL or REPORTED itself. Blocks never join: a paragraph break, a JSDoc open /
+//               close, a list item / heading / fence / JSDoc @tag line, and each markdown table cell end a block,
+//               and a block is split into sentences at ".", "!" or "?" (closing quotes / brackets allowed) +
+//               whitespace -- so a following sentence, block, cell or list item never lends its tier word. The one
+//               exemption is a real disclaimer: the speed word QUOTED, negated by the word before it and naming a
+//               statement or claim after it (`no "faster than" statement`, `no "slower" claims`); only that
+//               phrase is dropped, the rest of its sentence is still checked.
 //   snippets    every ```js block of README.md and llms.txt runs (one node process, a mkdtemp dir, bounded); the import
 //               specifier "@zakkster/lite-bisect" is mapped to this package's Bisect.js. A CHECKED LINE is
 //               one line `<stmt>; // -> <literal>` where <stmt> is `const|let|var <name> = <expr>` or an
@@ -48,11 +59,12 @@ const DOCS = ['README.md', 'llms.txt', 'CHANGELOG.md', 'Bisect.d.ts', 'Bisect.js
 const QBOX_FILES = ['README.md', 'llms.txt', 'Bisect.d.ts', 'Bisect.js'];
 const NAME_FILES = ['README.md', 'llms.txt'];
 const TOKEN_FILES = ['README.md', 'llms.txt', 'CHANGELOG.md'];
-const QBOX = 'zero allocation where the kernel inlines into its caller, or every number argument (the query; the hint of lowerBoundHint*; lo / hi) is a Smi; a non-Smi number computed at run time or read from a typed array (a fractional query, a NaN hint read from a Float64Array, -0 for lo / hi) and passed across a call V8 does not inline is boxed by the caller: one 16 B HeapNumber per call on Node. For no hint pass lo or the literal NaN: neither boxes.';
+const QBOX = 'zero allocation where the kernel inlines into its caller, or every number argument (the query; the hint of lowerBoundHint*; lo / hi) is a Smi; a non-Smi number computed at run time or read from a typed array (a fractional query, a NaN hint read from a Float64Array, -0 for lo / hi) and passed across a call V8 does not inline is boxed by the caller: one 16 B HeapNumber per such argument on Node. For no hint pass lo or the literal NaN: neither boxes.';
 const BARE_FILES = ['README.md', 'llms.txt'];
 const CITE_FILES = ['README.md', 'llms.txt', 'CHANGELOG.md', 'Bisect.d.ts'];
-const SPEED_FILES = ['Bisect.d.ts'];
+const SPEED_FILES = ['Bisect.d.ts', 'README.md', 'llms.txt'];
 const PTR = 'LEDGER and RESEARCH ids refer to LEDGER.md and RESEARCH.md in the source repository; they are not in the npm tarball.';
+const PTR_FILES = ['LEDGER.md', 'RESEARCH.md'];   // the only unshipped files PTR explains (neon-5)
 const TOKENS = ['2.4', '3.4x', '0.614', '0.436', '1.640', '3.325', '1.088', '1.255', '4,096'];
 const SPAWN_MS = 120000;
 const MOD = await import(pathToFileURL(BISECT).href);
@@ -97,17 +109,59 @@ function bareResultHits(md) {
     return hits;
 }
 
+// A cited path as written: [/ | ~/]? [./ | ../]* [dir/]* NAME.md (neon-5: a prefix no longer hides it). The lookbehind
+// keeps a match from starting inside a longer path or a URL (scheme://host/... has no start the pattern accepts).
 function citedMd(text) {
-    return [...new Set(text.match(/(?<![A-Za-z0-9_./-])[A-Za-z0-9_-]+\.md(?![A-Za-z0-9_])/g) || [])];
+    return [...new Set(text.match(/(?<![A-Za-z0-9_.\/~-])(?:~?\/)?(?:\.\.?\/)*(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_-]+\.md(?![A-Za-z0-9_])/g) || [])];
 }
+
+const citeKey = (p) => p.replace(/^(?:\.\/)+/, '');   // ./README.md is README.md; ../README.md stays outside the package
 
 function uncitable(text, shipped) {
-    return text.includes(PTR) ? [] : citedMd(text).filter((n) => !shipped.includes(n));
+    const ok = text.includes(PTR) ? shipped.concat(PTR_FILES) : shipped;
+    return citedMd(text).filter((p) => !ok.includes(citeKey(p)));
 }
 
+// non-empty: a string, or an object whose url is a non-empty string.
+function hasRepository(pkg) {
+    const r = pkg.repository;
+    if (typeof r === 'string') return r.trim() !== '';
+    return r !== null && typeof r === 'object' && typeof r.url === 'string' && r.url.trim() !== '';
+}
+
+// The blocks a speed sentence may not cross (neon-5). A JSDoc open / close ends a block; inside a JSDoc the gutter
+// `*` is dropped, outside it a leading `* ` is a markdown list item.
+function speedBlocks(text) {
+    const blocks = [];
+    let cur = [];
+    const flush = () => { if (cur.length) blocks.push(cur.join(' ')); cur = []; };
+    let inDoc = false;
+    for (const part of text.split(/(\/\*\*|\*\/)/)) {
+        flush();
+        if (part === '/**') { inDoc = true; continue; }
+        if (part === '*/') { inDoc = false; continue; }
+        for (let l of part.split('\n')) {
+            if (inDoc) l = l.replace(/^\s*\*\s?/, '');
+            if (/^\s*$/.test(l)) { flush(); continue; }
+            if (/^\s*\|/.test(l)) { flush(); for (const c of l.split('|')) { cur.push(c); flush(); } continue; }
+            if (/^\s*(?:[-+*]\s|\d+[.)]\s|#|\`\`\`|@[A-Za-z])/.test(l)) flush();
+            cur.push(l);
+        }
+    }
+    flush();
+    return blocks;
+}
+
+const DISCLAIMER = /\bno\s+"(?:faster|slower)(?:\s+than)?"\s+(?:statement|claim)s?\b/gi;
+
 function speedHits(text) {
-    const flat = text.split('\n').map((l) => l.replace(/^\s*(\/\*\*|\*\/|\*)\s?/, '')).join(' ');
-    return flat.split(/\.\s+/).filter((x) => /\b(slower|faster)\b/i.test(x) && !/PRELIMINARY|STATISTICAL|REPORTED/.test(x)).map((x) => x.trim().slice(0, 60));
+    const hits = [];
+    for (const b of speedBlocks(text)) {
+        for (const x of b.split(/[.!?]["')\]]*\s+/)) {
+            if (/\b(slower|faster)\b/i.test(x.replace(DISCLAIMER, '')) && !/PRELIMINARY|STATISTICAL|REPORTED/.test(x)) hits.push(x.trim().slice(0, 60));
+        }
+    }
+    return hits;
 }
 
 function isDigit(c) { return c >= '0' && c <= '9'; }
@@ -159,8 +213,10 @@ function docsProblems(texts) {
     each('bare', BARE_FILES, (s) => { const h = bareResultHits(s); return h.length ? 'bare // <number> result comment at ' + h.join(', ') : ''; });
     if (!texts.has('package.json')) out.push('cite package.json: missing package.json');
     else {
-        const shipped = JSON.parse(texts.get('package.json')).files;
-        each('cite', CITE_FILES, (s) => { const h = uncitable(s, shipped); return h.length ? 'cites unshipped ' + h.join(', ') + ' without the pointer sentence' : ''; });
+        const pkg = JSON.parse(texts.get('package.json'));
+        const shipped = pkg.files;
+        each('cite', CITE_FILES, (s) => { const h = uncitable(s, shipped); return h.length ? 'cites unshipped ' + h.join(', ') + (s.includes(PTR) ? ' (the pointer sentence covers only ' + PTR_FILES.join(' / ') + ')' : ' without the pointer sentence') : ''; });
+        each('repo', DOCS.filter((f) => shipped.includes(f)), (s) => (s.includes(PTR) && !hasRepository(pkg) ? 'holds the pointer sentence but package.json has no repository' : ''));
     }
     each('speed', SPEED_FILES, (s) => { const h = speedHits(s); return h.length ? 'untiered speed word: ' + h.join(' | ') : ''; });
     return out;
@@ -305,11 +361,15 @@ test('docs: no bare `// <number>` result comment in a README / llms.txt js fence
     assert.deepEqual(slice('bare'), []);
 });
 
-test('docs: every cited <NAME>.md is in package.json files[] or the file holds the pointer sentence (AU-R6)', () => {
+test('docs: every cited .md path is shipped, or LEDGER.md / RESEARCH.md under the pointer sentence (AU-R6, neon-5)', () => {
     assert.deepEqual(slice('cite'), []);
 });
 
-test('docs: Bisect.d.ts "slower" / "faster" sentences carry PRELIMINARY / STATISTICAL / REPORTED (AU-R7)', () => {
+test('docs: a shipped doc with the pointer sentence has a package.json repository (NEON-R2)', () => {
+    assert.deepEqual(slice('repo'), []);
+});
+
+test('docs: Bisect.d.ts / README.md / llms.txt "slower" / "faster" sentences carry PRELIMINARY / STATISTICAL / REPORTED (AU-R7, neon-5)', () => {
     assert.deepEqual(slice('speed'), []);
 });
 
@@ -330,8 +390,11 @@ test('docs: README ```js snippets run, every `// ->` matches (k / k, k > 0)', (t
 // ---- controls: in-memory input through the same functions ----------------------------------------
 
 // The file lists copied from SPEC assertion 12, NOT the constants docsProblems loops over (law 9).
-const SPEC_FILES = { names: ['README.md', 'llms.txt'], qbox: ['README.md', 'llms.txt', 'Bisect.d.ts', 'Bisect.js'], tokens: ['README.md', 'llms.txt', 'CHANGELOG.md'], never: ['README.md', 'llms.txt', 'CHANGELOG.md', 'Bisect.d.ts', 'Bisect.js'], ascii: ['README.md', 'llms.txt', 'CHANGELOG.md', 'Bisect.d.ts', 'Bisect.js'], bare: ['README.md', 'llms.txt'], cite: ['README.md', 'llms.txt', 'CHANGELOG.md', 'Bisect.d.ts'], speed: ['Bisect.d.ts'] };
-const SHIPPED = JSON.stringify({ files: ['Bisect.js', 'Bisect.d.ts', 'llms.txt', 'LICENSE.txt', 'CHANGELOG.md', 'README.md'] });
+const SPEC_FILES = { names: ['README.md', 'llms.txt'], qbox: ['README.md', 'llms.txt', 'Bisect.d.ts', 'Bisect.js'], tokens: ['README.md', 'llms.txt', 'CHANGELOG.md'], never: ['README.md', 'llms.txt', 'CHANGELOG.md', 'Bisect.d.ts', 'Bisect.js'], ascii: ['README.md', 'llms.txt', 'CHANGELOG.md', 'Bisect.d.ts', 'Bisect.js'], bare: ['README.md', 'llms.txt'], cite: ['README.md', 'llms.txt', 'CHANGELOG.md', 'Bisect.d.ts'], repo: ['README.md', 'llms.txt', 'CHANGELOG.md', 'Bisect.d.ts', 'Bisect.js'], speed: ['Bisect.d.ts', 'README.md', 'llms.txt'] };
+const SHIPPED_FILES = ['Bisect.js', 'Bisect.d.ts', 'llms.txt', 'LICENSE.txt', 'CHANGELOG.md', 'README.md'];
+const REPO = { type: 'git', url: 'https://github.com/PeshoVurtoleta/lite-bisect.git' };
+const SHIPPED = JSON.stringify({ files: SHIPPED_FILES, repository: REPO });
+const NOREPO = JSON.stringify({ files: SHIPPED_FILES });
 const CLEAN = NAMES.join(' ') + '\n' + QBOX + '\n';
 const cleanMap = () => new Map(SPEC_FILES.never.map((f) => [f, CLEAN]).concat([['package.json', SHIPPED]]));
 const QCUT = QBOX.indexOf(' a non-Smi');
@@ -343,7 +406,32 @@ const PLANTS = [
     { check: 'ascii', files: SPEC_FILES.ascii, plant: (s) => s + '\u00e9\n' },
     { check: 'bare', files: SPEC_FILES.bare, plant: (s) => s + '\n```js\nconst x = f(1); // 3\n```\n' },
     { check: 'cite', files: SPEC_FILES.cite, plant: (s) => s + '\nsee ROADMAP.md\n' },
+    // neon-5, the audit's plants (each read exit 0 on the frozen-before docs test):
+    { name: 'unshipped under PTR', check: 'cite', files: SPEC_FILES.cite, plant: (s) => s + PTR + '\nSee SECRET_UNSHIPPED.md.\n' },       // PTR covers LEDGER / RESEARCH only
+    { name: './ and dir/', check: 'cite', files: SPEC_FILES.cite, plant: (s) => s + '\nSee ./ROADMAP.md and docs/INTERNAL.md.\n' }, // ./ and dir/ prefixes
+    { name: './SECRET.md', check: 'cite', files: SPEC_FILES.cite, plant: (s) => s + '\nSee ./SECRET.md\n' },
+    { name: '../ under PTR', check: 'cite', files: SPEC_FILES.cite, plant: (s) => s + PTR + '\nSee ../LEDGER.md\n' },               // ../ leaves the package
+    { name: '/ root', check: 'cite', files: SPEC_FILES.cite, plant: (s) => s + '\nSee [r](/ROADMAP.md).\n' },     // root prefix (review D r1, split r2)
+    { name: '~/ home', check: 'cite', files: SPEC_FILES.cite, plant: (s) => s + '\nSee ~/SECRET.md.\n' },     // home prefix (review D r1, split r2)
+    { name: 'after a colon', check: 'cite', files: SPEC_FILES.cite, plant: (s) => s + '\nSee:SECRET.md\n' },     // ':' is not a path character (review D r2)
     { check: 'speed', files: SPEC_FILES.speed, plant: (s) => s + '\n * It is faster on small arrays.\n' },
+    { name: '3x faster', check: 'speed', files: SPEC_FILES.speed, plant: (s) => s + '\nlowerBoundBranchlessF64 is 3x faster than branchy on every CPU.\n' },
+    // a following block may not lend its tier word (each split conjunct has its own plant):
+    { name: 'paragraph lends', check: 'speed', files: SPEC_FILES.speed, plant: (s) => s + '\nIt is faster on small arrays\n\nPRELIMINARY: one CPU.\n' },           // paragraph
+    { name: 'JSDoc close lends', check: 'speed', files: SPEC_FILES.speed, plant: (s) => s + '\n/** It is faster on small arrays */ const PRELIMINARY = 1;\n' },             // JSDoc close (JSDoc blocks on separate lines: a paragraph break)
+    { name: 'list item lends', check: 'speed', files: SPEC_FILES.speed, plant: (s) => s + '\n- It is faster on small arrays\n- PRELIMINARY: one CPU.\n' },          // list item
+    { name: 'table cell lends', check: 'speed', files: SPEC_FILES.speed, plant: (s) => s + '\n| It is faster on small arrays | PRELIMINARY |\n' },                  // table cell
+    { name: 'sentence lends', check: 'speed', files: SPEC_FILES.speed, plant: (s) => s + '\nIt is faster on small arrays. PRELIMINARY: one CPU.\n' },             // sentence
+    { name: 'sentence .) lends', check: 'speed', files: SPEC_FILES.speed, plant: (s) => s + '\n(It read 3x faster at every n.) PRELIMINARY applies to another row.\n' },
+    { name: 'sentence ! lends', check: 'speed', files: SPEC_FILES.speed, plant: (s) => s + '\nIt is 3x faster! PRELIMINARY: one CPU.\n' },
+    { name: 'heading lends', check: 'speed', files: SPEC_FILES.speed, plant: (s) => s + '\nIt is faster on small arrays\n## PRELIMINARY: one CPU\n' },
+    { name: 'fence lends', check: 'speed', files: SPEC_FILES.speed, plant: (s) => s + '\nIt is faster on small arrays\n```\nPRELIMINARY: one CPU\n```\n' },
+    { name: 'JSDoc @tag lends', check: 'speed', files: SPEC_FILES.speed, plant: (s) => s + '\n/**\n * It is faster on small arrays\n * @remarks PRELIMINARY: one CPU.\n */\n' },
+    { name: 'N) list item lends', check: 'speed', files: SPEC_FILES.speed, plant: (s) => s + '\n1) It is faster on small arrays\n2) PRELIMINARY: one CPU.\n' },
+    // the disclaimer exemption is narrow: only a negated QUOTED word is dropped
+    { name: 'disclaimer plus a claim', check: 'speed', files: SPEC_FILES.speed, plant: (s) => s + '\nNo table and no "faster than" statement ships; it is 3x faster.\n' },
+    { name: 'quoted, not negated', check: 'speed', files: SPEC_FILES.speed, plant: (s) => s + '\nIt is "faster than" branchy.\n' },
+    { name: 'negated quote, no statement', check: 'speed', files: SPEC_FILES.speed, plant: (s) => s + '\nThe hint kernel is no "faster than" lowerBoundBranchless on incoherent streams.\n' },
 ];
 
 test('control: docsProblems -- a clean in-memory set has 0 problems', () => {
@@ -353,14 +441,14 @@ test('control: docsProblems -- a clean in-memory set has 0 problems', () => {
 test('control: docsProblems -- a file left out is missing in every check that lists it', () => {
     const m = cleanMap();
     m.delete('README.md');
-    assert.deepEqual(docsProblems(m), ['exists', 'names', 'qbox', 'never', 'tokens', 'ascii', 'bare', 'cite'].map((c) => c + ' README.md: missing README.md'));
+    assert.deepEqual(docsProblems(m), ['exists', 'names', 'qbox', 'never', 'tokens', 'ascii', 'bare', 'cite', 'repo', 'speed'].map((c) => c + ' README.md: missing README.md'));
 });
 
 let plantCases = 0;
 for (const p of PLANTS) {
     for (const f of p.files) {
         plantCases++;
-        test('control: docsProblems -- ' + p.check + ' violation planted in ' + f + ' is exactly one problem', () => {
+        test('control: docsProblems -- ' + p.check + (p.name ? ' (' + p.name + ')' : '') + ' violation planted in ' + f + ' is exactly one problem', () => {
             const m = cleanMap();
             m.set(f, p.plant(m.get(f)));
             const pr = docsProblems(m);
@@ -370,8 +458,8 @@ for (const p of PLANTS) {
     }
 }
 
-test('control: docsProblems -- 26 planted (check, file) cases', () => {
-    assert.equal(plantCases, 26);
+test('control: docsProblems -- 111 planted (check, file) cases', () => {
+    assert.equal(plantCases, 111);   // 21 + cite 8 x 4 + speed 16 x 3 + repo 2 x 5 (registered below; counted before any test runs)
 });
 
 test('control: a missing doc file is reported missing', () => {
@@ -461,14 +549,49 @@ test('control: snippets -- `throws` on a call that returns fails', () => {
     assert.ok(r.problems.some((p) => p.includes('got undefined')), JSON.stringify(r.problems));
 });
 
-test('control: cite -- a cited unshipped .md passes only with the pointer sentence; a shipped one always passes', () => {
+test('control: cite -- LEDGER.md / RESEARCH.md pass only with the pointer sentence; a shipped one always passes; nothing else ever', () => {
     const shipped = JSON.parse(SHIPPED).files;
-    assert.deepEqual(uncitable('see ROADMAP.md', shipped), ['ROADMAP.md']);
-    assert.deepEqual(uncitable('see ROADMAP.md\n' + PTR, shipped), []);
-    assert.deepEqual(uncitable('see README.md and CHANGELOG.md', shipped), []);
+    assert.deepEqual(uncitable('see RESEARCH.md and LEDGER.md', shipped), ['RESEARCH.md', 'LEDGER.md']);
+    assert.deepEqual(uncitable('see RESEARCH.md and ./LEDGER.md\n' + PTR, shipped), []);
+    assert.deepEqual(uncitable('see ROADMAP.md\n' + PTR, shipped), ['ROADMAP.md']);
+    assert.deepEqual(uncitable('see README.md, ./CHANGELOG.md and `./README.md`', shipped), []);
+    assert.deepEqual(uncitable('see ../README.md and docs/README.md', shipped), ['../README.md', 'docs/README.md']);
+    assert.deepEqual(uncitable('see https://example.com/x/ROADMAP.md', shipped), []);   // a URL is not a file citation
     const m = cleanMap();
-    m.set('llms.txt', CLEAN + 'see ROADMAP.md\n' + PTR + '\n');
+    m.set('llms.txt', CLEAN + 'see RESEARCH.md and ./README.md\n' + PTR + '\n');
     assert.deepEqual(docsProblems(m), []);
+});
+
+// NEON-R2: the package.json the verdict reads loses its repository -> every shipped doc holding PTR is one problem.
+const REPO_PKGS = [['no repository', NOREPO], ['an empty repository url', JSON.stringify({ files: SHIPPED_FILES, repository: { type: 'git', url: '' } })]];
+for (const [label, pkg] of REPO_PKGS) {
+    for (const f of SPEC_FILES.repo) {
+        plantCases++;
+        test('control: docsProblems -- repo: PTR in ' + f + ' with ' + label + ' in package.json is exactly one problem', () => {
+            const m = cleanMap();
+            m.set('package.json', pkg);
+            assert.deepEqual(docsProblems(m), []);   // no PTR anywhere: no repository needed
+            m.set(f, m.get(f) + PTR + '\n');
+            const pr = docsProblems(m);
+            assert.equal(pr.length, 1, JSON.stringify(pr));
+            assert.ok(pr[0].startsWith('repo ' + f + ': '), pr[0]);
+        });
+    }
+}
+
+test('control: repo -- the live package.json without its repository fails the live docs (a copy, never the file)', () => {
+    const pkg = JSON.parse(live.texts.get('package.json'));
+    assert.ok(hasRepository(pkg), 'the live package.json has a repository');
+    delete pkg.repository;
+    const m = new Map(live.texts);
+    m.set('package.json', JSON.stringify(pkg));
+    const pr = docsProblems(m).filter((p) => p.startsWith('repo '));
+    assert.deepEqual(pr, DOCS.filter((f) => live.texts.get(f).includes(PTR)).map((f) => 'repo ' + f + ': holds the pointer sentence but package.json has no repository'));
+    assert.ok(pr.length >= 2, 'README.md and llms.txt hold PTR: ' + JSON.stringify(pr));
+    assert.equal(hasRepository({ repository: 'github:x/y' }), true);
+    assert.equal(hasRepository({ repository: ' ' }), false);
+    assert.equal(hasRepository({ repository: null }), false);
+    assert.equal(hasRepository({ repository: {} }), false);
 });
 
 test('control: bare -- a result comment inside a js fence hits, a checked or prose line does not', () => {
@@ -479,4 +602,7 @@ test('control: bare -- a result comment inside a js fence hits, a checked or pro
 test('control: speed -- "slower" without a tier word hits, with one does not', () => {
     assert.equal(speedHits(' * It can be slower than x.').length, 1);
     assert.equal(speedHits(' * It can be slower than x (PRELIMINARY, one CPU).').length, 0);
+    // a sentence wrapped over JSDoc lines is one sentence; a disclaimer alone is not a claim
+    assert.equal(speedHits('/**\n * It can be slower than x\n * (PRELIMINARY, one CPU).\n */').length, 0);
+    assert.equal(speedHits('- **Not a speed claim.** No benchmark table and no "faster than" statement ships here.').length, 0);
 });

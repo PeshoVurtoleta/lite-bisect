@@ -82,7 +82,7 @@ LEDGER and RESEARCH ids refer to LEDGER.md and RESEARCH.md in the source reposit
 |---|---|---|---|
 | `lowerBoundBranchless*` / `upperBoundBranchless*` | The default for a read-only search. No speed is claimed. | C7: TurboFan inlines the 103 B body; Maglev does not inline it at its default 100 B cap. Law 3: traced, not expected. | DETERMINISTIC (inline pin, traced on the pinned Node; see below) |
 | `lowerBoundBranchy*` / `upperBoundBranchy*` | The search result feeds a write (an insert position, a splice index). | I1: a branchless search loses when its result feeds a write. Inherited from another package, not re-run here. | INHERITED, not re-run here: unproven for this package, no gate |
-| `lowerBoundHint*` | Coherent query streams: each query lands near the previous answer (the hint). | C5: PRELIMINARY, one CPU. Slower on incoherent streams; see RESEARCH.md 1.5. | STATISTICAL: pending (no timing lane gated yet) |
+| `lowerBoundHint*` | Coherent query streams: each query lands near the previous answer (the hint). | C5: slower on incoherent streams (PRELIMINARY: one CPU, Apple M4 Pro; see RESEARCH.md 1.5). | STATISTICAL: pending (no timing lane gated yet) |
 | `segment*` / `nearest*` | "Which interval holds x" (`segment`) / "which key is closest to x" (`nearest`). | Built on `upperBoundBranchless*` / `lowerBoundBranchless*`; contract rows in the oracle and boundary tests. | DETERMINISTIC (oracle, boundary, mutants) |
 | `assertRange` / `assertSorted` | Setup, tests, debug builds. Never inside a hot loop. | Cold by design; no kernel calls them. | DETERMINISTIC (boundary tests) |
 
@@ -238,7 +238,19 @@ sample(-3); // -> 0
 sample(99); // -> 90
 ```
 
-For a monotone playhead the previous answer is a good hint, so `lowerBoundHintF64(times, 0, n, t, prev)` is the call to try; whether it beats the plain kernel on your stream is a measurement for your caller (see the table above: STATISTICAL, pending).
+`sample` needs a segment (`upper - 1`, the last `i` with `times[i] <= t`). `lowerBoundHint*` answers a lower bound (the first `i` with `times[i] >= t`), not a segment, so it is not a drop-in hint for `segmentF64`; there is no `segmentHint*` export (a post-1.0 item in the source repository's ROADMAP, 8a item 11). On `times` above (t = 5) and on a track with a duplicate key (`[0, 10, 10, 20]`, t = 10) the two differ:
+
+```js
+import { segmentF64, lowerBoundHintF64 } from "@zakkster/lite-bisect";
+
+const times = new Float64Array([0, 10, 20, 40]);
+segmentF64(times, 0, 4, 5); // -> 0
+lowerBoundHintF64(times, 0, 4, 5, 0); // -> 1
+segmentF64(new Float64Array([0, 10, 10, 20]), 0, 4, 10); // -> 2
+lowerBoundHintF64(new Float64Array([0, 10, 10, 20]), 0, 4, 10, 0); // -> 1
+```
+
+Where a lower bound is what your caller needs and the stream is monotone, the previous answer is a good hint; whether `lowerBoundHint*` beats the plain kernel on your stream is a measurement for your caller (see the table above: STATISTICAL, pending).
 
 ---
 
@@ -249,14 +261,15 @@ For a monotone playhead the previous answer is a good hint, so `lowerBoundHintF6
 
 The sentence this package stands behind, on one line:
 
-zero allocation where the kernel inlines into its caller, or every number argument (the query; the hint of lowerBoundHint*; lo / hi) is a Smi; a non-Smi number computed at run time or read from a typed array (a fractional query, a NaN hint read from a Float64Array, -0 for lo / hi) and passed across a call V8 does not inline is boxed by the caller: one 16 B HeapNumber per call on Node. For no hint pass lo or the literal NaN: neither boxes.
+zero allocation where the kernel inlines into its caller, or every number argument (the query; the hint of lowerBoundHint*; lo / hi) is a Smi; a non-Smi number computed at run time or read from a typed array (a fractional query, a NaN hint read from a Float64Array, -0 for lo / hi) and passed across a call V8 does not inline is boxed by the caller: one 16 B HeapNumber per such argument on Node. For no hint pass lo or the literal NaN: neither boxes.
 
 | Situation | Allocation |
 |---|---|
 | Kernel inlined into its caller (any query) | the floor |
 | Kernel called across a real call, every number argument a Smi (query; h; lo / hi), or h the literal NaN | the floor |
-| Kernel called across a real call V8 does not inline, a non-Smi query computed at run time or read from a typed array on Node (fractional, NaN, -0, or outside [-2^31, 2^31)) | one 16 B HeapNumber per call, made by the caller (LEDGER C2, C9); pointer-compressed V8 (Chrome / Electron: also [2^30, 2^31)) is unmeasured here |
-| `lowerBoundHint*` called with a NaN hint read from a Float64Array, across a call V8 does not inline | one 16 B HeapNumber per call, made by the CALLER (LEDGER C9); the literal `NaN` or `h = lo` is the floor |
+| Kernel called across a real call V8 does not inline, a non-Smi query computed at run time or read from a typed array on Node (fractional, NaN, -0, or outside [-2^31, 2^31)), every other number argument a Smi | one 16 B HeapNumber per non-Smi argument, here one, made by the caller (LEDGER C2, C9, C12); pointer-compressed V8 (Chrome / Electron: also [2^30, 2^31)) is unmeasured here |
+| `lowerBoundHint*` called with a NaN hint read from a Float64Array and a Smi query, across a call V8 does not inline | one 16 B HeapNumber for the hint (one non-Smi argument), made by the CALLER (LEDGER C9); the literal `NaN` or `h = lo` is the floor |
+| Two non-Smi arguments across a call V8 does not inline (e.g. `lowerBoundHint*` with a fractional query and a NaN hint, both read from Float64Arrays; or a -0 `lo` read at run time and a fractional query) | 2 x 16 B: one HeapNumber per non-Smi argument, made by the caller (LEDGER C12); gated by the `fracnanhint` lane of the alloc gate (run B 28..36 B/op, run A the floor) |
 | `assertRange` / `assertSorted` | cold: the thrown `RangeError` and its message string (only on a failure) |
 
 Where TurboFan inlines a kernel (traced on the pinned Node, LEDGER C7), the non-Smi query never crosses a real call, so there is no box. Where it does not -- an un-optimized caller, or a call site V8 declines to inline -- there is. Pass a Smi query, and h = lo (or the literal NaN) instead of a NaN read at run time, when a kernel sits across such a call.
@@ -270,16 +283,16 @@ Gated numbers (each is ONE run, quoted as a measurement, never as a law):
 | Gate | Result | Source and provenance |
 |---|---|---|
 | Oracle | 5 types x 4 seeds plus a rounded-tie phase (>= 1000 rounded ties per seed on F64 / F32 / I32), exact BigInt reference, 0 failures; an independent exact nearest test (100,000 draws per type) | `npm test` in the same log as the Mutants row |
-| Mutants | 103 rows (5 per kernel x type + 3 rounded-tie rows), every row KILLED, control PASS | `.handoff/audit-b/evidence/components-sessionB.log` (2026-11-11T18:22:51Z..18:25:25Z, node v26.8.2, load averages 23.81 27.40 21.09 at start, host PRELIMINARY: other sessions busy; one run; `npm run verify` itself PENDING, quiet lock BUSY); the live row "every row KILLED (killed === rows)" |
-| Coverage (c8) | 100% lines (449 / 449), 100% branches (239 / 239), 37 / 37 functions | same log (`npm run coverage`; the coverage glob includes the docs test) |
-| Torture, phase 1 | 4096 cycles, 143360 / 143360 checks, size 0, alive 0, orphans 0, leaks 0 | same log (`npm run torture`, pinned flags) |
+| Mutants | 106 rows (5 per kernel x type + 3 rounded-tie + 3 infinity rows), every row KILLED, control PASS | the `npm test` step of `.handoff/audit-neon/evidence/D-verify2.log` (`npm run verify`, exit 0, 2026-11-22T22:59:13Z..23:01:58Z, node v26.8.2, darwin arm64, load1 2.43 at start, host QUIET by `quiet-lock`, a node at 15.7% CPU at start, one run); the live row "every row KILLED (killed === rows)" |
+| Coverage (c8) | 100% lines (450 / 450), 100% branches (241 / 241), 37 / 37 functions | same log (the `npm run coverage` step; the coverage glob includes the docs test) |
+| Torture, phase 1 | 4096 cycles, 143360 / 143360 checks, size 0, alive 0, orphans 0, leaks 0 | same log (the `npm run torture` step, pinned flags) |
 | Torture, phase 2 | 35 / 35 lanes x 200000 ops per lane; retained B/op min 0.001, max 0.043; steady gc major 0, minor 0 (both gated) | same log |
 | TurboFan inline pin | every pinned edge inlined (traced per kernel x type); the M4 size control passes on the pinned Node (35 edges over the limit, nearest* now among them) | `npm test` in the same log as the Mutants row; the M4 control skips (never passes) on any other Node |
-| Alloc gate, run A (inlined) | 150 / 150 lanes read at most 0.82 B/op in windows 1..5 (empty lane 0.54; tool floor 0.27) | same log (`npm run gates:local`) |
-| Alloc gate, run B (not inlined) | non-Smi lanes (105) and the NaN-hint-read lanes (5) read 16.22 .. 16.95 B/op (one HeapNumber); Smi lanes (35) at most 0.97 B/op; literal-NaN-hint lanes (5) at most 0.68 B/op; empty lane 0.54 | same log |
-| Bytecode gate | branchless 103 B, branchy 55 B, hint 228 B, segment 25 B, nearest 189 B, five copies equal | same log |
+| Alloc gate, run A (inlined) | 155 / 155 lanes read 0.00 B/op in every window 1..5 (empty lane 0.00; tool floor 0.00) | `.handoff/audit-neon/evidence/D-gates.log` (`npm run gates`, 2026-11-22T22:51:29Z..22:53:11Z, node v26.8.2, darwin arm64, load1 2.18 at start, host QUIET by `quiet-lock`, one run, 21 / 21 pass) |
+| Alloc gate, run B (not inlined) | non-Smi query lanes (105) and the NaN-hint-read lanes (5) read 16.00 B/op in every window 1..5 (one HeapNumber); the two-argument `fracnanhint` lanes (5) 32.00 B/op (two); Smi lanes (35) at most 0.01 B/op; literal-NaN-hint lanes (5) 0.00 B/op; empty lane 0.00 | same log as run A |
+| Bytecode gate | branchless 103 B, branchy 55 B, hint 228 B, segment 25 B, nearest 189 B, five copies equal | same log as run A |
 
-The alloc and bytecode rows above were read with `npm run gates:local` (the LiteUtils tools, commit aed66841e7949130bc780147d765414873edc3b9, `alloc-per-op.mjs` sha256 d4386d85..., `bytecode-budget.sh` sha256 0b9c9157...). The gates run on the pinned Node v26.8.2 only; a run on any other Node is NO VERDICT, never a pass. `npm run gates` takes the tools from the devDependency `@zakkster/lite-utils` (^1.1.0, the first release that ships `alloc-per-op.mjs`) and runs in hosted CI (the `gates` job of `.github/workflows/ci.yml`, ubuntu-latest x86 and macos-latest arm64); `npm run gates:local` takes them from a LiteUtils checkout (`LITE_UTILS_DIR`, which overrides the installed package when set). A LiteUtils version outside ^1.1.0, or a missing tool, is NO VERDICT. Tier: DETERMINISTIC; not in `npm test`.
+The alloc and bytecode rows above were read with `npm run gates` on the installed `@zakkster/lite-utils` 1.1.0 (`alloc-per-op.mjs` sha256 610bbfa8c44ea947..., `bytecode-budget.sh` sha256 deeee04c9bfc46c7...). The gates run on the pinned Node v26.8.2 only; a run on any other Node is NO VERDICT, never a pass. `npm run gates` takes the tools from the devDependency `@zakkster/lite-utils` (^1.1.0, the first release that ships `alloc-per-op.mjs`) and runs in hosted CI (the `gates` job of `.github/workflows/ci.yml`, ubuntu-latest x86 and macos-latest arm64); `npm run gates:local` takes them from a LiteUtils checkout (`LITE_UTILS_DIR`, which overrides the installed package when set). A LiteUtils version outside ^1.1.0, or a missing tool, is NO VERDICT. Tier: DETERMINISTIC; not in `npm test`.
 
 </details>
 
@@ -288,9 +301,9 @@ The alloc and bytecode rows above were read with `npm run gates:local` (the Lite
 ## Design decisions worth knowing
 
 - **A per-type kernel, by name.** One call site fed several array types goes megamorphic (LEDGER C3), so there is no `lowerBound(a, ...)` that accepts any type. Call `lowerBoundBranchlessF64` for a Float64Array.
-- **No length switch, no linear-scan fallback.** The draft's `lowerBound` (a length switch), `LINEAR_MAX` and `lowerBoundLinear` did not ship: the switch never read faster and read slower at every small n measured (LEDGER A4, C4). (PRELIMINARY: one Apple M4 Pro, one strict run, P0 2026-11-10; no number is claimed)
+- **No length switch, no linear-scan fallback.** The draft's `lowerBound` (a length switch), `LINEAR_MAX` and `lowerBoundLinear` did not ship: the switch never read faster and read slower at every small n measured (LEDGER A4, C4; PRELIMINARY: one Apple M4 Pro, one strict run, P0 2026-11-10; no number is claimed).
 - **No selector, no per-call front.** A per-call lookup blocks inlining (LEDGER A3); the setup-time selector is parked (its evidence is arm64-only) and the per-call type front is refused (LEDGER A5). No Eytzinger layout either (LEDGER A6, parked: unmeasured here).
-- **The branchless body stays at 103 B.** A 92 B body inlines under Maglev but read slower under TurboFan at every fixed length measured; the maintainer ruled to keep the 103 B body (LEDGER C7). (PRELIMINARY: one Apple M4 Pro, one strict run, P0 2026-11-10; no number is claimed)
+- **The branchless body stays at 103 B.** A 92 B body inlines under Maglev but read slower under TurboFan at every fixed length measured (PRELIMINARY: one Apple M4 Pro, one strict run, P0 2026-11-10; no number is claimed); the maintainer ruled to keep the 103 B body (LEDGER C7).
 - **Trust on the hot path, assert on the cold one.** Range checks cost bytes in every call; the asserts are separate functions no kernel calls.
 - **NaN fails closed by construction.** The comparisons are written so a NaN query compares false everywhere and returns `lo`.
 - **Hint `h` is a caller error when it is not an integer or NaN.** It may return a wrong index or never return. This is documented, not guarded (P1-R9).
@@ -304,7 +317,7 @@ The alloc and bytecode rows above were read with `npm run gates:local` (the Lite
 
 ## Testing
 
-`npm test` runs 218 tests, 218 pass, 0 fail (`.handoff/audit-b/evidence/components-sessionB.log` (2026-11-11T18:22:51Z..18:25:25Z, node v26.8.2, load averages 23.81 27.40 21.09 at start, host PRELIMINARY: other sessions busy; one run; `npm run verify` itself PENDING, quiet lock BUSY)). They cover: a naive-reference oracle per type (4 seeds each), a boundary table (every kernel x type), the contract rows for `segment` / `nearest` / the asserts, mutant kills, golden parity of the generated kernels, the TurboFan inline pin, the types check, doc truth (snippets, Q-BOX, banned tokens; `test/Bisect.docs.test.mjs`), and tree-shaking (`test/Bisect.shake.test.mjs`).
+`npm test` runs 376 tests, 376 pass, 0 fail (`.handoff/audit-neon/evidence/D-r3-npmtest.log`: exit 0, 2026-11-22T23:25:20Z..23:25:52Z, node v26.8.2, darwin arm64, load1 7.51 at start, host NOISY by `quiet-lock` (the count is deterministic; no timing is read from this run), no other node over 10% CPU, one run). They cover: a naive-reference oracle per type (4 seeds each), a boundary table (every kernel x type), the contract rows for `segment` / `nearest` / the asserts, mutant kills, golden parity of the generated kernels, the TurboFan inline pin, the types check, doc truth (snippets, Q-BOX, banned tokens; `test/Bisect.docs.test.mjs`), and tree-shaking (`test/Bisect.shake.test.mjs`).
 
 Tree-shaking is gated under esbuild 0.28 only (`test/Bisect.shake.test.mjs`, deterministic, part of `npm test`). A bundle that imports one kernel contains that kernel, the kernels it calls (lowerBoundHint* and nearest* call lowerBoundBranchless*, segment* calls upperBoundBranchless*, assertSorted calls assertRange), and no other top-level code. A bare side-effect import of Bisect.js (the gate imports it by path) emits no kernel, and esbuild reports that it honours `"sideEffects": false`. webpack, rollup and terser are not tested.
 

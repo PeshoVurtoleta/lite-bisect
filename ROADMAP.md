@@ -254,7 +254,7 @@ The program spec is `.handoff/p1/SPEC-p1.md` (gitignored). Rulings, quoted:
 | P1-R9 | "Caller error, documented (Recommended)" | `lowerBoundHint`'s h must be an integer index or NaN (NaN -> lo; outside [lo, hi] clamped); a non-integer h is a caller error that may return a wrong index or never return (the frozen body hangs on h = 10.5), like a non-integer range; documented in the Bisect.js header and the .d.ts JSDoc; no hot bytes, no new export, no cold check (asked 2026-11-11 in the P1 coder burst after the U2 review) |
 | P1-R10 | "R < 1.0 B/op (Recommended)" | (steady minor GCs reopened by AU-R5, 5c) The torture gates the retained heap per 200,000-op lane: every lane reads retained < 1.0 B/op (head read 0.071..0.107 over 5 runs), plus a must-fail control lane that retains one small on-heap object per op; deterministic tier, in `npm run torture` (asked 2026-11-11 in P1 coder burst 2 after the U4 review found the channel measured but never gated, LEDGER B4) |
 | P1-R11 | "Add --no-maglev-inlining (Recommended)" | U6 alloc gate run B (not inlined) runs `--no-turbo-inlining --no-maglev-inlining`, tier check requires both; every window 1..5 read (asked 2026-11-11 in P1 coder burst 3: with the TurboFan flag alone Maglev inlined the lane and the 55 B branchy body in window 1, 0.49..0.86 B/op) |
-| P1-R12 | "Empty-lane NO VERDICT (Recommended)" | Each U6 alloc run measures an empty lane with its own flags; > 1.0 B/op in any window 1..5 = NO VERDICT (gate FAIL, labelled harness-noisy), never a pass; thresholds unchanged (asked 2026-11-11 in P1 coder burst 3: an empty lane read 1.03 at load1 ~28) |
+| P1-R12 | "Empty-lane NO VERDICT (Recommended)" | Each U6 alloc run measures an empty lane with its own flags; outside [0, 1.0] B/op in any window 1..5 = NO VERDICT (gate FAIL, labelled harness-noisy), never a pass; thresholds unchanged (asked 2026-11-11 in P1 coder burst 3: an empty lane read 1.03 at load1 ~28) |
 | P1-R13 | "7.0.2; node10 -> nodenext (Recommended)" | typescript pinned exactly 7.0.2 (P1-R5); the U7 types gate runs node16 / nodenext / bundler; the node10 control becomes a types.exports.test row (package.json top-level `types` === exports["."].types === "./Bisect.d.ts", must-fail controls: removed, mismatched) (asked 2026-11-11 in P1 coder burst 4: typescript 7.0.2 removed moduleResolution node10, TS5108, probed) |
 
 Planner details settled in the spec (not rulings): 37 exports, `<kernel><T>` suffix names with T in F64 / F32 / U32 /
@@ -335,7 +335,7 @@ Gate-unit rulings (maintainer, 2026-11-12, AskUserQuestion during the P3 A/B gat
 | Q-id | Answer (quoted) | Effect |
 |---|---|---|
 | AB-G1 | "FINDING wins (Recommended)" | a clean gated lane reading another word is a FINDING even when other gated lanes are VOID (listed on the verdict line; a missing gated lane: AB-G1a); no re-dispatch wins the word back |
-| AB-G1a | "Keep: missing = NO VERDICT (Recommended)" | AB-G1 covers VOID gated lanes in a complete gate run (23 lanes, K = 11, C = 3, no injection, PROV end, no STOP); a missing gated lane (subset, truncated, killed or STOPped run) is NO VERDICT, the wrong gated words listed on the line |
+| AB-G1a | "Keep: missing = NO VERDICT (Recommended)" | AB-G1 covers VOID gated lanes in a complete gate run (23 lanes, K = 11, C = 3, no injection, PROV end, no STOP; since BIS-neon-2, c883d19, also HEADER NQ2 = NQ2, minWindow = MIN_N and exactly one PROV start); a missing gated lane (subset, truncated, killed or STOPped run) is NO VERDICT, the wrong gated words listed on the line |
 | AB-G2 | "Bind live = frozen (Recommended)" | the gate times the frozen 88e5b1c-10add825 kernels and STOPs (ANCHOR, NO VERDICT) if a live Bisect.js F64 kernel body differs from its frozen body byte for byte |
 
 ## 5g. Gates-unit rulings (maintainer, 2026-11-22, release-program step 2, P1-R1 / P3-R4)
@@ -628,6 +628,7 @@ release, once the A/B result (P3-R1) is known. Each item names its trigger and w
       (today's lowerBoundHint* is 228 B + 2 x 103 B); in a 3-channel loop 2 of 3 calls inline instead of 1 of 3,
       32 -> 16 B/op, at a cost of about 1 ns on a pure forward playhead (section 5.2). Rides with this item or
       item 11; same gates.
+    Provenance: PRELIMINARY: one Apple M4 Pro (darwin arm64), node v26.8.2 / V8 14.6.202.34-node.28, host load up to 9.07, no quiet lock; harness written by the audit and NOT reviewed here (law 11: its numbers are leads until a reviewed probe re-runs them); x86 unmeasured (law 7).
 11. **segmentHint* / upperBoundHint* (audit neon 2026-11-22; PRELIMINARY; RESEARCH-DEEP (neon, 2026-11-22)
     section 5.2).** NEW public surface: a research burst and a PROPOSAL first (ORCHESTRATOR "Research bursts"),
     never a direct coder unit. Evidence: on a smooth 60 fps monotone playhead (8 frames per segment) segHintFast
@@ -637,6 +638,7 @@ release, once the A/B result (P3-R1) is known. Each item names its trigger and w
     Scrollforge) as wanting segment / upperBound semantics, not lowerBound alone. The README:241 footgun (it
     points a segment user at lowerBoundHintF64) is being fixed in words in this burst (BIS-neon-7); the new
     functions are not. Trigger: 1.0 on npm and a P2 consumer (item 1) whose own A/B shows the lookup matters.
+    Provenance: PRELIMINARY: one Apple M4 Pro (darwin arm64), node v26.8.2 / V8 14.6.202.34-node.28, host load up to 9.07, no quiet lock; harness written by the audit and NOT reviewed here (law 11: its numbers are leads until a reviewed probe re-runs them); x86 unmeasured (law 7).
 12. **The 96 B integer nearest (U32 / U16 / I32; audit neon 2026-11-22; PRELIMINARY; RESEARCH-DEEP (neon,
     2026-11-22) section 5.3).** Claim: for 32-bit integers |p + q| <= 2^33 - 2 < 2^53, so (a[i - 1] + a[i]) * 0.5
     is exact in a double and the TwoSum body is dead; F32 / F64 keep TwoSum. Evidence (the audit's): 181,190 / 181,190
@@ -644,10 +646,12 @@ release, once the A/B result (P3-R1) is known. Each item names its trigger and w
     TurboFan footprint 292 -> 195 B; TurboFan speed 1.026..1.045 WITHIN at n = 256 / 4,096. Needs: an integer /
     float split in scripts/gen.mjs, an independent oracle (not the audit's) with mutants (mutants.json split),
     expect.json / size-budget re-pin, c8 100%. Post-1.0 (AB-G2 and the generated bodies). Trigger: 1.0 on npm.
+    Provenance: PRELIMINARY: one Apple M4 Pro (darwin arm64), node v26.8.2 / V8 14.6.202.34-node.28, host load up to 9.07, no quiet lock; harness written by the audit and NOT reviewed here (law 11: its numbers are leads until a reviewed probe re-runs them); x86 unmeasured (law 7).
 13. **Closing R-12 (interpolation) on arm64.** Evidence (PRELIMINARY; RESEARCH-DEEP (neon, 2026-11-22) section 4):
     interp2_bl / interp_full lost 1.22x..3.54x at every cell, n = 256..4,194,427, uniform / quad / exp (the
     3.0x..3.5x cells at 4,194,427 are marked VOID by A/A drift; the clean cells span 1.22x..1.68x). Closing needs a
     reviewed probe re-run (law 11); x86 is optional per the audit. Until then R-12 stays parked under item 7.
+    Provenance: PRELIMINARY: one Apple M4 Pro (darwin arm64), node v26.8.2 / V8 14.6.202.34-node.28, host load up to 9.07, no quiet lock; harness written by the audit and NOT reviewed here (law 11: its numbers are leads until a reviewed probe re-runs them); x86 unmeasured (law 7).
 
 ## 9. LiteUtils integration (planning only, 2026-11-10)
 
