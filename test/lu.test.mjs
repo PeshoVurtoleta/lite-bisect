@@ -7,10 +7,15 @@
 // never computed from lu.mjs (LEDGER law 9). Each row varies ONE conjunct from a valid plant.
 // Needs no network and no LiteUtils checkout: every plant lives under mkdtemp(os.tmpdir()) and is removed after.
 // The env-dir plants need `git` on PATH (a commit is part of a valid LITE_UTILS_DIR: provenance, SPEC-p1 R7).
+// neon-4 rows (audit-neon): a package.json naming another package (env dir AND installed); an env dir that is a
+// non-git subdir of ANOTHER repo (git walks up: its commit would be the parent's); GIT_DIR / GIT_INDEX_FILE in the
+// parent env pointing at another repo (the commit / dirty flags read must stay the env dir's own); the CLI run
+// through a symlinked path (exit 2 + the NO VERDICT line, never a silent exit 0). Every git child this file
+// spawns runs with GIT_DIR, GIT_INDEX_FILE and GIT_WORK_TREE removed (scrubGit, typed here, not lu.mjs's).
 
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,13 +43,25 @@ function plant(dir, { pkg, files }) {
         writeFileSync(join(dir, f), '#!/bin/sh\n# planted ' + f + '\n');
     }
 }
+const GIT_VARS = ['GIT_DIR', 'GIT_INDEX_FILE', 'GIT_WORK_TREE'];
+function scrubGit(e) {
+    const o = { ...e };
+    for (const k of GIT_VARS) delete o[k];
+    return o;
+}
 function gitCommit(dir) {
     const G = ['-C', dir, '-c', 'user.name=lu-test', '-c', 'user.email=lu-test@example.invalid',
         '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null'];
     for (const a of [['init', '-q'], ['add', '-A'], ['commit', '-q', '-m', 'plant']]) {
-        const r = runBounded('git', [...G, ...a], { timeoutMs: 20000 });
+        const r = runBounded('git', [...G, ...a], { timeoutMs: 20000, env: scrubGit(process.env) });
         if (r.status !== 0) throw new Error('plant: git ' + a[0] + ' failed: ' + r.stderr);
     }
+}
+/** The plant's own HEAD, read by this file (scrubbed env), never by lu.mjs. */
+function headOf(dir) {
+    const r = runBounded('git', ['-C', dir, 'rev-parse', 'HEAD'], { timeoutMs: 20000, env: scrubGit(process.env) });
+    if (r.status !== 0) throw new Error('headOf: ' + r.stderr);
+    return r.stdout.trim();
 }
 const installedDir = (root) => join(root, 'node_modules', '@zakkster', 'lite-utils');
 const VALID_INSTALLED = { pkg: pj('1.1.0', { bin: BIN_110 }), files: [...SH_ONLY_100, 'alloc-per-op.mjs'] };
@@ -55,6 +72,12 @@ const VALID_ENV = { pkg: pj('1.1.0'), files: BOTH, git: true };
 // (relative: resolved against --root, never the cwd), 'NOTDIR' = <root>/no-such-dir); expect 'ok' | 'NV';
 // ok rows: source (typed; for env rows the typed prefix + suffix) and tools (typed paths relative to the source dir);
 // NV rows: why (a typed fragment of the reason).
+// parentGit: true = the env dir is planted (no git of its own) at <root>/parent/lu-checkout inside a committed repo
+// <root>/parent. foreign: 'GIT_DIR' | 'GIT_INDEX_FILE' | 'GIT_WORK_TREE' = another committed repo <root>/other; the
+// parent env (the CLI child's env AND this process's env during the in-process read) points that variable at its
+// .git / .git/index / work tree.
+// Every ok env row also checks r.commit === the plant's own HEAD (headOf) and every tool 'clean'.
+const OTHER_NAME = { name: 'completely-different-pkg', version: '1.1.0' };
 const ROWS = [
     // ---- ok -----------------------------------------------------------------------------------------
     { id: 'ok installed 1.1.0 via bin', expect: 'ok', env: undefined, envDir: null,
@@ -79,6 +102,13 @@ const ROWS = [
         source: ['LITE_UTILS_DIR=', ' (@zakkster/lite-utils@1.1.0)'], tools: { 'alloc-per-op.mjs': 'alloc-per-op.mjs', 'bytecode-budget.sh': 'bytecode-budget.sh' } },
     { id: 'ok env dir relative to --root (not the cwd)', expect: 'ok', env: 'REL', envDir: VALID_ENV, installed: null,
         source: ['LITE_UTILS_DIR=lu-checkout', ' (@zakkster/lite-utils@1.1.0)'], tools: { 'alloc-per-op.mjs': 'alloc-per-op.mjs', 'bytecode-budget.sh': 'bytecode-budget.sh' } },
+    // neon-4 (iv): an inherited GIT_DIR / GIT_INDEX_FILE naming another repo does not change what is read
+    { id: 'ok env dir with GIT_DIR -> another repo in the parent env (own commit read)', expect: 'ok', env: 'DIR', envDir: VALID_ENV, installed: null, foreign: 'GIT_DIR',
+        source: ['LITE_UTILS_DIR=', ' (@zakkster/lite-utils@1.1.0)'], tools: { 'alloc-per-op.mjs': 'alloc-per-op.mjs', 'bytecode-budget.sh': 'bytecode-budget.sh' } },
+    { id: 'ok env dir with GIT_INDEX_FILE -> another repo index in the parent env (own dirty flags)', expect: 'ok', env: 'DIR', envDir: VALID_ENV, installed: null, foreign: 'GIT_INDEX_FILE',
+        source: ['LITE_UTILS_DIR=', ' (@zakkster/lite-utils@1.1.0)'], tools: { 'alloc-per-op.mjs': 'alloc-per-op.mjs', 'bytecode-budget.sh': 'bytecode-budget.sh' } },
+    { id: 'ok env dir with GIT_WORK_TREE -> another repo work tree in the parent env (own top)', expect: 'ok', env: 'DIR', envDir: VALID_ENV, installed: null, foreign: 'GIT_WORK_TREE',
+        source: ['LITE_UTILS_DIR=', ' (@zakkster/lite-utils@1.1.0)'], tools: { 'alloc-per-op.mjs': 'alloc-per-op.mjs', 'bytecode-budget.sh': 'bytecode-budget.sh' } },
     // ---- NV: nothing to read ------------------------------------------------------------------------
     { id: 'NV nothing installed + env unset', expect: 'NV', env: undefined, envDir: null, installed: null, why: 'no LiteUtils: @zakkster/lite-utils is not installed' },
     { id: 'NV nothing installed + env empty', expect: 'NV', env: '', envDir: null, installed: null, why: 'no LiteUtils: @zakkster/lite-utils is not installed' },
@@ -99,6 +129,13 @@ const ROWS = [
     { id: 'NV installed unreadable package.json', expect: 'NV', env: undefined, envDir: null, installed: { pkg: '{"version": "1.1.0",', files: BOTH }, why: 'has an unreadable package.json' },
     { id: 'NV installed package.json is JSON null', expect: 'NV', env: undefined, envDir: null, installed: { pkg: 'null', files: BOTH }, why: 'package.json is not a JSON object' },
     { id: 'NV installed package.json is an array', expect: 'NV', env: undefined, envDir: null, installed: { pkg: '["1.1.0"]', files: BOTH }, why: 'package.json is not a JSON object' },
+    // ---- NV: installed package name (neon-4 (i)) ---------------------------------------------------------
+    { id: 'NV installed package.json names another package', expect: 'NV', env: undefined, envDir: null, installed: { pkg: OTHER_NAME, files: BOTH },
+        why: 'installed @zakkster/lite-utils package.json names "completely-different-pkg", not @zakkster/lite-utils' },
+    { id: 'NV installed package.json has no name', expect: 'NV', env: undefined, envDir: null, installed: { pkg: { version: '1.1.0' }, files: BOTH },
+        why: 'package.json names undefined, not @zakkster/lite-utils' },
+    { id: 'NV installed wrong name AND 1.0.0 (the version reason comes first)', expect: 'NV', env: undefined, envDir: null,
+        installed: { pkg: { name: 'completely-different-pkg', version: '1.0.0' }, files: BOTH }, why: 'version "1.0.0" is not inside ^1.1.0' },
     // ---- NV: installed tools ---------------------------------------------------------------------------
     { id: 'NV installed 1.1.0 missing alloc-per-op.mjs', expect: 'NV', env: undefined, envDir: null, installed: { pkg: pj('1.1.0'), files: ['bytecode-budget.sh'] }, why: 'has no alloc-per-op.mjs' },
     { id: 'NV installed 1.1.0 missing bytecode-budget.sh', expect: 'NV', env: undefined, envDir: null, installed: { pkg: pj('1.1.0'), files: ['alloc-per-op.mjs'] }, why: 'has no bytecode-budget.sh' },
@@ -118,6 +155,11 @@ const ROWS = [
         why: 'LITE_UTILS_DIR has an unreadable package.json' },
     { id: 'NV env dir not a git repo (installed valid)', expect: 'NV', env: 'DIR', envDir: { pkg: pj('1.1.0'), files: BOTH, git: false }, installed: VALID_INSTALLED,
         why: 'cannot read the LiteUtils git commit' },
+    // ---- NV: env dir identity (neon-4 (i), (ii)) ----------------------------------------------------------
+    { id: 'NV env dir package.json names another package (installed valid)', expect: 'NV', env: 'DIR', envDir: { pkg: OTHER_NAME, files: BOTH, git: true }, installed: VALID_INSTALLED,
+        why: 'LITE_UTILS_DIR package.json names "completely-different-pkg", not @zakkster/lite-utils' },
+    { id: 'NV env dir is a non-git subdir of another repo (valid name; installed valid)', expect: 'NV', env: 'DIR', envDir: { pkg: pj('1.1.0'), files: BOTH, git: false }, installed: VALID_INSTALLED,
+        parentGit: true, why: 'LITE_UTILS_DIR is not the top of its own git work tree' },
 ];
 
 function baseEnv() {
@@ -131,10 +173,25 @@ for (const row of ROWS) {
         const root = join(TMP, 'r' + (seq++));
         mkdirSync(root, { recursive: true });
         if (row.installed !== null) plant(installedDir(root), row.installed);
-        const envDir = join(root, 'lu-checkout');
+        const envDir = row.parentGit ? join(root, 'parent', 'lu-checkout') : join(root, 'lu-checkout');
+        if (row.parentGit) {
+            plant(join(root, 'parent'), { pkg: { name: 'parent-repo', version: '9.9.9' }, files: ['README.txt'] });
+            gitCommit(join(root, 'parent'));
+        }
         if (row.envDir !== null) {
             plant(envDir, row.envDir);
             if (row.envDir.git) gitCommit(envDir);
+        }
+        let foreignVal;
+        if (row.foreign !== undefined) {
+            const other = join(root, 'other');
+            plant(other, { pkg: { name: 'other-repo', version: '0.0.1' }, files: ['other.txt'] });
+            gitCommit(other);
+            if (row.foreign === 'GIT_DIR') foreignVal = join(other, '.git');
+            else if (row.foreign === 'GIT_INDEX_FILE') foreignVal = join(other, '.git', 'index');
+            else if (row.foreign === 'GIT_WORK_TREE') foreignVal = other;
+            else assert.fail('table: unknown foreign column');
+            assert.notEqual(headOf(other), headOf(envDir), 'plant: two repos with one commit id');
         }
         const env = baseEnv();
         if (row.env === '') env.LITE_UTILS_DIR = '';
@@ -142,8 +199,14 @@ for (const row of ROWS) {
         else if (row.env === 'REL') env.LITE_UTILS_DIR = 'lu-checkout';
         else if (row.env === 'NOTDIR') env.LITE_UTILS_DIR = join(root, 'no-such-dir');
         else assert.equal(row.env, undefined, 'table: unknown env column');
+        if (foreignVal !== undefined) env[row.foreign] = foreignVal;
 
-        const r = resolveTools({ root, env });
+        let r;
+        const saved = process.env[row.foreign];
+        if (foreignVal !== undefined) process.env[row.foreign] = foreignVal;
+        try { r = resolveTools({ root, env }); } finally {
+            if (foreignVal !== undefined) { if (saved === undefined) delete process.env[row.foreign]; else process.env[row.foreign] = saved; }
+        }
         const nv = luVerdict(r);
         const c = runBounded(process.execPath, [LU_CLI, '--root', root], { timeoutMs: 60000, env, cwd: PKG_ROOT });
         assert.equal(c.timedOut, false, 'CLI timed out');
@@ -160,6 +223,15 @@ for (const row of ROWS) {
             for (const t of BOTH) assert.equal(r.tools[t], join(srcDir, row.tools[t]), t);
             for (const t of BOTH) assert.ok(r.tools[t].startsWith(srcDir + sep), t + ' not under ' + srcDir);
             assert.ok(c.stdout.startsWith('# LiteUtils ' + r.source + ' | dir '), 'CLI stdout: ' + c.stdout);
+            if (row.env === 'DIR' || row.env === 'REL') {
+                const own = headOf(envDir);
+                assert.equal(r.commit, own, 'in-process commit is not the env dir\'s own HEAD');
+                assert.ok(c.stdout.split('\n')[0].endsWith(' | commit ' + own), 'CLI commit: ' + c.stdout.split('\n')[0]);
+                for (const t of BOTH) assert.equal(r.dirty[t], 'clean', t + ' dirty flag');
+                const toolLines = c.stdout.split('\n').filter((l) => l.startsWith('# tool '));
+                assert.equal(toolLines.length, BOTH.length, 'CLI tool lines: ' + c.stdout);
+                for (const l of toolLines) assert.ok(l.endsWith(' | clean'), 'CLI dirty: ' + l);
+            }
         } else {
             assert.equal(row.expect, 'NV', 'table: unknown expect column');
             assert.equal(typeof nv, 'string', 'in-process read ok: ' + (r.ok ? r.source : ''));
@@ -200,6 +272,27 @@ test('CLI: an unknown argument is NO VERDICT (exit 2)', () => {
     assert.equal(c.status, 2);
     assert.ok(c.stdout.startsWith('NO VERDICT: '), c.stdout);
     assert.ok(c.stdout.includes('--bogus'), c.stdout);
+});
+
+// neon-4 (iii): the CLI guard must hold through a symlinked argv[1] (ci.yml runs the CLI and relies on exit 2).
+test('CLI via a symlinked path: an invalid LITE_UTILS_DIR is NO VERDICT (exit 2 + the NO VERDICT line)', () => {
+    const link = join(TMP, 'link-lu.mjs');
+    symlinkSync(LU_CLI, link);
+    const env = { ...baseEnv(), LITE_UTILS_DIR: '/nonexistent-dir' };
+    const nv = luVerdict(resolveTools({ env }));
+    assert.ok(String(nv).startsWith('NO VERDICT: LITE_UTILS_DIR is not a directory: /nonexistent-dir'), String(nv));
+    const c = runBounded(process.execPath, [link], { timeoutMs: 60000, env, cwd: PKG_ROOT });
+    assert.equal(c.timedOut, false, 'CLI timed out');
+    assert.equal(c.status, 2, 'CLI via symlink exit ' + c.status + ': ' + JSON.stringify(c.stdout) + c.stderr);
+    assert.equal(c.stdout, nv + '\n', 'CLI via symlink stdout');
+});
+
+test('CLI via a symlinked path: the valid installed package prints the provenance (exit 0)', () => {
+    const link = join(TMP, 'link-lu-ok.mjs');
+    symlinkSync(LU_CLI, link);
+    const c = runBounded(process.execPath, [link], { timeoutMs: 60000, env: baseEnv(), cwd: PKG_ROOT });
+    assert.equal(c.status, 0, 'exit ' + c.status + ': ' + c.stdout + c.stderr);
+    assert.ok(c.stdout.startsWith('# LiteUtils installed @zakkster/lite-utils@'), 'CLI via symlink stdout: ' + JSON.stringify(c.stdout));
 });
 
 test('CLI: --root with no value is NO VERDICT (exit 2)', () => { const c = runBounded(process.execPath, [LU_CLI, '--root'], { timeoutMs: 60000, env: baseEnv(), cwd: PKG_ROOT }); assert.equal(c.status, 2); assert.ok(c.stdout.startsWith('NO VERDICT: '), c.stdout); });

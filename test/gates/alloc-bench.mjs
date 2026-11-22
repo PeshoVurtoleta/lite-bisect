@@ -13,7 +13,9 @@
 // the value stays a float64 in optimized code until it crosses a call V8 does not inline.
 // Hint classes (AU-R3, R-NANHINT-BOX), lowerBoundHint<T> only, Smi query (the smi class's queries):
 // nanhint = h read per op from a Float64Array filled with NaN (a non-Smi number across the call: one 16 B box
-// when the kernel is not inlined), nanlit = h is the literal NaN (a constant: no box in any tier). The test
+// when the kernel is not inlined), nanlit = h is the literal NaN (a constant: no box in any tier), fracnanhint =
+// the frac query (smi + 0.5) AND the NaN hint, both read per op from Float64Arrays (TWO non-Smi number arguments
+// across one call: two 16 B boxes = 32 B/op when not inlined; NEON-R1, "one box per such argument"). The test
 // names these extra classes itself and passes them to census().
 // State is allocated at import; a lane writes its Smi result to an Int32Array slot and allocates nothing.
 // Tier check (LEDGER law 8), only when LITE_BISECT_TIER_FILE names a file (needs --allow-natives-syntax):
@@ -110,6 +112,7 @@ export const lanes = {
     'lowerBoundHintF64.nan': (i) => { OUT[0] = lowerBoundHintF64(A_F64, 0, LEN, QN_F64[i & QMASK], H[i & QMASK]); },
     'lowerBoundHintF64.nanhint': (i) => { OUT[0] = lowerBoundHintF64(A_F64, 0, LEN, QS_F64[i & QMASK], HN[i & QMASK]); },
     'lowerBoundHintF64.nanlit': (i) => { OUT[0] = lowerBoundHintF64(A_F64, 0, LEN, QS_F64[i & QMASK], NaN); },
+    'lowerBoundHintF64.fracnanhint': (i) => { OUT[0] = lowerBoundHintF64(A_F64, 0, LEN, QF_F64[i & QMASK], HN[i & QMASK]); },
     'segmentF64.smi': (i) => { OUT[0] = segmentF64(A_F64, 0, LEN, QS_F64[i & QMASK]); },
     'segmentF64.frac': (i) => { OUT[0] = segmentF64(A_F64, 0, LEN, QF_F64[i & QMASK]); },
     'segmentF64.big': (i) => { OUT[0] = segmentF64(A_F64, 0, LEN, QB_F64[i & QMASK]); },
@@ -140,6 +143,7 @@ export const lanes = {
     'lowerBoundHintF32.nan': (i) => { OUT[0] = lowerBoundHintF32(A_F32, 0, LEN, QN_F32[i & QMASK], H[i & QMASK]); },
     'lowerBoundHintF32.nanhint': (i) => { OUT[0] = lowerBoundHintF32(A_F32, 0, LEN, QS_F32[i & QMASK], HN[i & QMASK]); },
     'lowerBoundHintF32.nanlit': (i) => { OUT[0] = lowerBoundHintF32(A_F32, 0, LEN, QS_F32[i & QMASK], NaN); },
+    'lowerBoundHintF32.fracnanhint': (i) => { OUT[0] = lowerBoundHintF32(A_F32, 0, LEN, QF_F32[i & QMASK], HN[i & QMASK]); },
     'segmentF32.smi': (i) => { OUT[0] = segmentF32(A_F32, 0, LEN, QS_F32[i & QMASK]); },
     'segmentF32.frac': (i) => { OUT[0] = segmentF32(A_F32, 0, LEN, QF_F32[i & QMASK]); },
     'segmentF32.big': (i) => { OUT[0] = segmentF32(A_F32, 0, LEN, QB_F32[i & QMASK]); },
@@ -170,6 +174,7 @@ export const lanes = {
     'lowerBoundHintU32.nan': (i) => { OUT[0] = lowerBoundHintU32(A_U32, 0, LEN, QN_U32[i & QMASK], H[i & QMASK]); },
     'lowerBoundHintU32.nanhint': (i) => { OUT[0] = lowerBoundHintU32(A_U32, 0, LEN, QS_U32[i & QMASK], HN[i & QMASK]); },
     'lowerBoundHintU32.nanlit': (i) => { OUT[0] = lowerBoundHintU32(A_U32, 0, LEN, QS_U32[i & QMASK], NaN); },
+    'lowerBoundHintU32.fracnanhint': (i) => { OUT[0] = lowerBoundHintU32(A_U32, 0, LEN, QF_U32[i & QMASK], HN[i & QMASK]); },
     'segmentU32.smi': (i) => { OUT[0] = segmentU32(A_U32, 0, LEN, QS_U32[i & QMASK]); },
     'segmentU32.frac': (i) => { OUT[0] = segmentU32(A_U32, 0, LEN, QF_U32[i & QMASK]); },
     'segmentU32.big': (i) => { OUT[0] = segmentU32(A_U32, 0, LEN, QB_U32[i & QMASK]); },
@@ -200,6 +205,7 @@ export const lanes = {
     'lowerBoundHintU16.nan': (i) => { OUT[0] = lowerBoundHintU16(A_U16, 0, LEN, QN_U16[i & QMASK], H[i & QMASK]); },
     'lowerBoundHintU16.nanhint': (i) => { OUT[0] = lowerBoundHintU16(A_U16, 0, LEN, QS_U16[i & QMASK], HN[i & QMASK]); },
     'lowerBoundHintU16.nanlit': (i) => { OUT[0] = lowerBoundHintU16(A_U16, 0, LEN, QS_U16[i & QMASK], NaN); },
+    'lowerBoundHintU16.fracnanhint': (i) => { OUT[0] = lowerBoundHintU16(A_U16, 0, LEN, QF_U16[i & QMASK], HN[i & QMASK]); },
     'segmentU16.smi': (i) => { OUT[0] = segmentU16(A_U16, 0, LEN, QS_U16[i & QMASK]); },
     'segmentU16.frac': (i) => { OUT[0] = segmentU16(A_U16, 0, LEN, QF_U16[i & QMASK]); },
     'segmentU16.big': (i) => { OUT[0] = segmentU16(A_U16, 0, LEN, QB_U16[i & QMASK]); },
@@ -230,6 +236,7 @@ export const lanes = {
     'lowerBoundHintI32.nan': (i) => { OUT[0] = lowerBoundHintI32(A_I32, 0, LEN, QN_I32[i & QMASK], H[i & QMASK]); },
     'lowerBoundHintI32.nanhint': (i) => { OUT[0] = lowerBoundHintI32(A_I32, 0, LEN, QS_I32[i & QMASK], HN[i & QMASK]); },
     'lowerBoundHintI32.nanlit': (i) => { OUT[0] = lowerBoundHintI32(A_I32, 0, LEN, QS_I32[i & QMASK], NaN); },
+    'lowerBoundHintI32.fracnanhint': (i) => { OUT[0] = lowerBoundHintI32(A_I32, 0, LEN, QF_I32[i & QMASK], HN[i & QMASK]); },
     'segmentI32.smi': (i) => { OUT[0] = segmentI32(A_I32, 0, LEN, QS_I32[i & QMASK]); },
     'segmentI32.frac': (i) => { OUT[0] = segmentI32(A_I32, 0, LEN, QF_I32[i & QMASK]); },
     'segmentI32.big': (i) => { OUT[0] = segmentI32(A_I32, 0, LEN, QB_I32[i & QMASK]); },

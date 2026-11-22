@@ -1,15 +1,18 @@
 // test/gates/alloc.test.mjs -- U6 alloc-per-op gate (SPEC-p1 U6, assertion 9; P1-R1). Deterministic: no
 // clock, so no quiet lock. NOT in the npm test glob (test/*.test.mjs): run by `npm run gates` /
 // `npm run gates:local` (LITE_UTILS_DIR=../LiteUtils) on the pinned Node only.
-// Two runs of LiteUtils alloc-per-op.mjs over test/gates/alloc-bench.mjs (150 lanes = 7 kernels x 5 types x
-// 4 query classes + lowerBoundHint x 5 types x 2 hint classes, nanhint / nanlit, AU-R3), N = 1e6, K = 6, --json. The gate reads EVERY window 1..5 of every lane, never STEADY
+// Two runs of LiteUtils alloc-per-op.mjs over test/gates/alloc-bench.mjs (155 lanes = 7 kernels x 5 types x
+// 4 query classes + lowerBoundHint x 5 types x 3 hint classes, nanhint / nanlit (AU-R3) / fracnanhint (NEON-R1)),
+// N = 1e6, K = 6, --json. The gate reads EVERY window 1..5 of every lane, never STEADY
 // and never the tool's --max (LEDGER D2: STEADY = min of windows 1..K-1 hides a later tier that boxes).
 //   run A (inlined):      --expose-gc --no-concurrent-recompilation; every lane <= 1.0 B/op in every window.
 //   run B (not inlined):  + --no-turbo-inlining --no-maglev-inlining --allow-natives-syntax; smi lanes <= 1.0,
 //                         frac / big / nan lanes 14.0..18.0 (one 16 B HeapNumber per call, LEDGER C2) in
 //                         every window; lowerBoundHint<T>.nanhint (Smi query, NaN hint read from a Float64Array)
 //                         14.0..18.0 and .nanlit (Smi query, h = the literal NaN) <= 1.0 (AU-R3,
-//                         R-NANHINT-BOX: the hint is a number argument too); the
+//                         R-NANHINT-BOX: the hint is a number argument too); lowerBoundHint<T>.fracnanhint
+//                         (frac query AND NaN hint, both read from Float64Arrays: two non-Smi arguments)
+//                         28.0..36.0 = two 16 B boxes per call (NEON-R1: one box per such argument); the
 //                         bench writes a %GetOptimizationStatus tier file (LITE_BISECT_TIER_FILE): every lane
 //                         and every kernel must carry the TurboFan bits calibrated in that process, and the
 //                         run must have both no-inlining flags, else NO VERDICT = FAIL (LEDGER law 8).
@@ -21,15 +24,18 @@
 // (tool default 2e5) is margin, not a fix. Pinned Node only (v26.8.2, expect.json): another Node is NO VERDICT
 // (the 16 B box is Node's 64-bit HeapNumber; alloc-per-op is checked on v26.8.2 only).
 // Harness (P1-R12): each run also measures the bench's empty lane 'harness.empty' ((i) => {}, same flags, same
-// tool invocation). If it reads > 1.0 B/op in ANY window 1..5 the run is NO VERDICT (harness-noisy) = FAIL:
+// tool invocation). If it reads outside [0, 1.0] B/op in ANY window 1..5 (neon-3: a negative reading is not a
+// clean harness either) the run is NO VERDICT (harness-noisy) = FAIL:
 // never a pass, never a subtraction; thresholds unchanged. P1-R11: run B carries --no-maglev-inlining.
 // Controls (law 9): a lane that boxes only from window 3 FAILS here; the tool's own --max 1 gate on it is
 // keyed on the tool's --json `signal` (Q-AP-LB (a), LiteUtils LEDGER #128, a field never a version): absent = the old
 // STEADY tool, exit 0 + PASS; "space-used-paired" = the new PEAK tool, exit 1 + FAIL; any other = NO VERDICT;
 // a never-optimized lane is refused by the tier check; run A's numbers fail run B's floor and run B's
-// numbers fail run A's ceiling; a broken calibration / a missing flag / a missing tier file / a noisy or
+// numbers fail run A's ceiling; a two-box lane's run B numbers fail the one-box range and one-box numbers fail
+// the two-box range (NEON-R1); a broken calibration / a missing flag / a missing tier file / a noisy or
 // missing empty lane is NO VERDICT; a missing or extra lane row, or a non-number window (the tool's --json
-// writes NaN as null), is a FAIL row; no LiteUtils -> NO VERDICT and a non-zero exit. Both runs are judged
+// writes NaN as null), is a FAIL row; a negative empty-lane window read back from JSON is NO VERDICT (neon-3);
+// no LiteUtils -> NO VERDICT (judged by luVerdict) and a non-zero exit. Both runs are judged
 // ONLY through judge() (U6 review r1 B3), and the judge control feeds it clones of the real rows / tier.
 
 import { test, before } from 'node:test';
@@ -48,13 +54,16 @@ const K = 6;
 const WARM = 5000000;
 // Assertion 9 (SPEC-p1 section 4), typed here, never read from a run:
 const CLASSES = ['smi', 'frac', 'big', 'nan'];
-const HINT_CLASSES = { lowerBoundHint: ['nanhint', 'nanlit'] };   // AU-R3: extra classes of one kernel
+const HINT_CLASSES = { lowerBoundHint: ['nanhint', 'nanlit', 'fracnanhint'] };   // AU-R3 + NEON-R1: extra classes of one kernel
 const BOXED = ['frac', 'big', 'nan', 'nanhint'];                  // run B reads one box per call
+const BOXED2 = ['fracnanhint'];                                   // run B reads two boxes per call (NEON-R1)
 const NANLIT_MAX = 1.0;
 const INLINED_MAX = 1.0;
 const SMI_MAX = 1.0;
 const BOX_MIN = 14.0;
 const BOX_MAX = 18.0;
+const BOX2_MIN = 28.0;   // NEON-R1: two non-Smi arguments across a non-inlined call = 2 x 16 B (measured 32 B/op)
+const BOX2_MAX = 36.0;
 const FLAGS_A = ['--expose-gc', '--no-concurrent-recompilation'];
 const NO_INLINE = ['--no-turbo-inlining', '--no-maglev-inlining'];
 const FLAGS_B = [...FLAGS_A, ...NO_INLINE, '--allow-natives-syntax'];
@@ -82,7 +91,8 @@ const KERNEL_NAMES = [...new Set(LANES.map(kernelOf))].sort();
 export const expectInlined = () => [0, INLINED_MAX];
 export const expectNotInlined = (lane) => {
     const c = classOf(lane);
-    return c === 'smi' ? [0, SMI_MAX] : c === 'nanlit' ? [0, NANLIT_MAX] : BOXED.includes(c) ? [BOX_MIN, BOX_MAX] : [NaN, NaN];
+    return c === 'smi' ? [0, SMI_MAX] : c === 'nanlit' ? [0, NANLIT_MAX] : BOXED.includes(c) ? [BOX_MIN, BOX_MAX]
+        : BOXED2.includes(c) ? [BOX2_MIN, BOX2_MAX] : [NaN, NaN];
 };
 
 /** Every window 1..K-1 of every expected lane inside [lo, hi]; NaN fails; a missing / extra lane fails. */
@@ -105,12 +115,13 @@ export function checkWindows(rows, lanes, expect, k = K) {
     return out;
 }
 
-/** P1-R12: the empty lane's windows 1..K-1 all <= 1.0, else NO VERDICT (harness-noisy). null = harness ok. */
+/** P1-R12: the empty lane's windows 1..K-1 all inside [0, 1.0] (neon-3: a lower bound too), else NO VERDICT
+ *  (harness-noisy). null = harness ok. */
 export function emptyCheck(rows, k = K) {
     const r = rows.find((x) => x.lane === HARNESS);
     if (!r || !Array.isArray(r.windows) || r.windows.length !== k) return 'NO VERDICT (harness-noisy): no empty-lane row with ' + k + ' windows';
-    const bad = r.windows.slice(1).map((x, i) => [i + 1, x]).filter(([, x]) => !(typeof x === 'number' && x <= HARNESS_MAX));
-    if (bad.length) return 'NO VERDICT (harness-noisy): empty lane window ' + bad.map(([i, x]) => i + '=' + f2(x)).join(' ') + ' > ' + HARNESS_MAX + ' B/op (load ' + loadavg().map((x) => x.toFixed(2)).join(' ') + ')';
+    const bad = r.windows.slice(1).map((x, i) => [i + 1, x]).filter(([, x]) => !(typeof x === 'number' && x >= 0 && x <= HARNESS_MAX));
+    if (bad.length) return 'NO VERDICT (harness-noisy): empty lane window ' + bad.map(([i, x]) => i + '=' + f2(x)).join(' ') + ' outside [0, ' + HARNESS_MAX + '] B/op (load ' + loadavg().map((x) => x.toFixed(2)).join(' ') + ')';
     return null;
 }
 const laneRows = (rows) => rows.filter((r) => r.lane !== HARNESS);
@@ -118,7 +129,7 @@ function logHarness(tag, rows) {
     const r = rows.find((x) => x.lane === HARNESS);
     const w = r ? r.windows : [];
     console.log('# ' + tag + ' harness ' + HARNESS + ' w0..' + (K - 1) + ' ' + w.map(f2).join(' ') + ' | max w1..' + (K - 1) + ' ' +
-        (w.length > 1 ? f2(Math.max(...w.slice(1))) : 'n/a') + ' | ' + (emptyCheck(rows) || 'ok (<= ' + HARNESS_MAX + ')'));
+        (w.length > 1 ? f2(Math.max(...w.slice(1))) : 'n/a') + ' | ' + (emptyCheck(rows) || 'ok (inside [0, ' + HARNESS_MAX + '])'));
 }
 
 /** Tier (law 8): calibrated TurboFan mask; every named lane and kernel TurboFan; every flag present. */
@@ -228,13 +239,15 @@ test('census: both gate files exist and npm run gates names them (a missing name
     assert.deepEqual(missingGateFiles(), []);
 });
 
-test('census: alloc-bench lanes == KERNELS x TYPE_NAMES x CLASSES (140) + lowerBoundHint x TYPE_NAMES x nanhint / nanlit (10)', async () => {
+test('census: alloc-bench lanes == KERNELS x TYPE_NAMES x CLASSES (140) + lowerBoundHint x TYPE_NAMES x nanhint / nanlit / fracnanhint (15)', async () => {
     const m = await import(BENCH);
     const c = m.census(CLASSES, HINT_CLASSES);
     assert.deepEqual(c.got, [...LANES, HARNESS].sort());
     assert.deepEqual(c.expected, LANES);
-    assert.equal(LANES.length, 150);
+    assert.equal(LANES.length, 155);
     assert.equal(LANES.filter((l) => /^lowerBoundHint(F64|F32|U32|U16|I32)\.nan(hint|lit)$/.test(l)).length, 10);
+    assert.equal(LANES.filter((l) => /^lowerBoundHint(F64|F32|U32|U16|I32)\.fracnanhint$/.test(l)).length, 5);
+    for (const l of LANES.filter((x) => classOf(x) === 'fracnanhint')) assert.deepEqual(expectNotInlined(l), [28, 36], l);
     assert.throws(() => m.census(CLASSES, { noSuchKernel: ['x'] }), /unknown kernel/);
     for (const l of LANES) assert.ok(expectNotInlined(l).every(Number.isFinite), 'no run B range for ' + l);
 });
@@ -251,7 +264,7 @@ test('assertion 9a: inlined, every lane <= 1.0 B/op in every window 1..5', () =>
     assert.deepEqual(judge(RUN_A.rows, expectInlined), { noVerdict: null, failing: [] });
 });
 
-test('assertion 9b: --no-turbo-inlining --no-maglev-inlining, frac / big / nan / nanhint 14.0..18.0, smi / nanlit <= 1.0 in every window 1..5, tier TurboFan', () => {
+test('assertion 9b: --no-turbo-inlining --no-maglev-inlining, frac / big / nan / nanhint 14.0..18.0, fracnanhint 28.0..36.0, smi / nanlit <= 1.0 in every window 1..5, tier TurboFan', () => {
     needLU();
     const tierFile = join(TMP, 'tier-b.json');
     RUN_B = runJson(BENCH, FLAGS_B, { env: { LITE_BISECT_TIER_FILE: tierFile } });
@@ -412,10 +425,38 @@ test('control: a never-optimized lane in run B is refused by the tier check (law
 
 test('control: run A numbers fail run B ranges and run B numbers fail run A ceiling (both checks see the box)', () => {
     assert.ok(RUN_A && RUN_B, 'NO VERDICT: run A / run B did not complete');
-    const boxed = LANES.filter((l) => BOXED.includes(classOf(l)));   // includes the 5 nanhint lanes, never nanlit
+    const boxed = LANES.filter((l) => BOXED.includes(classOf(l)) || BOXED2.includes(classOf(l)));   // 5 nanhint + 5 fracnanhint, never nanlit
     assert.equal(boxed.filter((l) => classOf(l) === 'nanhint').length, 5);
+    assert.equal(boxed.filter((l) => classOf(l) === 'fracnanhint').length, 5);
     assert.deepEqual(failing(checkWindows(laneRows(RUN_A.rows), LANES, expectNotInlined)), boxed, 'B floor 14.0 did not catch an unboxed lane');
     assert.deepEqual(failing(checkWindows(laneRows(RUN_B.rows), LANES, expectInlined)), boxed, 'A ceiling 1.0 did not catch a boxed lane');
+});
+
+test('control: NEON-R1 -- run B two-box numbers fail the one-box range and one-box numbers fail the two-box range (real rows, through judge)', () => {
+    assert.ok(RUN_B && TIER_B, 'NO VERDICT: run B did not complete');
+    const clone = (x) => JSON.parse(JSON.stringify(x));
+    const two = LANES.filter((l) => classOf(l) === 'fracnanhint');
+    const one = two.map((l) => kernelOf(l) + '.nanhint');
+    assert.equal(two.length, 5);
+    for (const l of two) {
+        const w = RUN_B.rows.find((r) => r.lane === l).windows;
+        console.log('# C-box2 B ' + l + ' w0..' + (K - 1) + ' ' + w.map(f2).join(' ') + ' | [' + BOX2_MIN + ', ' + BOX2_MAX + ']');
+    }
+    // two-box numbers judged as a one-box lane: the fracnanhint rows' windows written into the nanhint rows
+    const r1 = clone(RUN_B.rows);
+    for (let i = 0; i < two.length; i++) r1.find((r) => r.lane === one[i]).windows = clone(RUN_B.rows.find((r) => r.lane === two[i]).windows);
+    const v1 = judge(r1, expectNotInlined, clone(TIER_B));
+    assert.equal(v1.noVerdict, null);
+    assert.deepEqual(v1.failing, [...one].sort(), 'BOX_MAX ' + BOX_MAX + ' did not catch a two-box reading');
+    // one-box numbers judged as a two-box lane
+    const r2 = clone(RUN_B.rows);
+    for (let i = 0; i < two.length; i++) r2.find((r) => r.lane === two[i]).windows = clone(RUN_B.rows.find((r) => r.lane === one[i]).windows);
+    const v2 = judge(r2, expectNotInlined, clone(TIER_B));
+    assert.equal(v2.noVerdict, null);
+    assert.deepEqual(v2.failing, [...two].sort(), 'BOX2_MIN ' + BOX2_MIN + ' did not catch a one-box reading');
+    // the same through checkWindows with the one-box range forced on the real two-box rows
+    const oneBox = () => [BOX_MIN, BOX_MAX];
+    assert.deepEqual(failing(checkWindows(laneRows(RUN_B.rows).filter((r) => two.includes(r.lane)), two, oneBox)), [...two].sort());
 });
 
 test('control: the checkers fail closed (missing row, extra row, NaN, short windows, tier file broken)', () => {
@@ -446,6 +487,12 @@ test('control: the checkers fail closed (missing row, extra row, NaN, short wind
         assert.deepEqual(failing(checkWindows([row('x.nanhint', v)], ['x.nanhint'], expectNotInlined)), ['x.nanhint'], 'nanhint window ' + k + ' not read');
     }
     assert.deepEqual(failing(checkWindows([row('x.unknown', [0, 0, 0, 0, 0, 0])], ['x.unknown'], expectNotInlined)), ['x.unknown'], 'an unknown class has no range: FAIL');
+    // NEON-R1 planted (runs without LiteUtils): 32 passes fracnanhint and fails nanhint; 16 the other way round
+    assert.deepEqual(failing(checkWindows([row('x.fracnanhint', Array(K).fill(32))], ['x.fracnanhint'], expectNotInlined)), []);
+    assert.deepEqual(failing(checkWindows([row('x.nanhint', Array(K).fill(32))], ['x.nanhint'], expectNotInlined)), ['x.nanhint']);
+    assert.deepEqual(failing(checkWindows([row('x.fracnanhint', Array(K).fill(16))], ['x.fracnanhint'], expectNotInlined)), ['x.fracnanhint']);
+    assert.deepEqual(failing(checkWindows([row('x.fracnanhint', [32, 32, 32, 32, 32, 36.01])], ['x.fracnanhint'], expectNotInlined)), ['x.fracnanhint']);
+    assert.deepEqual(failing(checkWindows([row('x.fracnanhint', [32, 27.99, 32, 32, 32, 32])], ['x.fracnanhint'], expectNotInlined)), ['x.fracnanhint']);
     const t = { execArgv: [...NO_INLINE], ref: { on: 41, off: 65, maglev: 25 }, lanes: { l: 41 }, kernels: { k: 41 } };
     assert.equal(checkTier(t, ['l'], ['k'], NO_INLINE).noVerdict, null);
     assert.match(checkTier({ ...t, execArgv: [] }, ['l'], ['k'], NO_INLINE).noVerdict, /lacks --no-turbo-inlining/);
@@ -472,6 +519,24 @@ test('control: a noisy empty lane (1.1 B/op in one window) makes the run NO VERD
     assert.match(String(emptyCheck(JSON.parse(JSON.stringify(e([0.3, null, 0.3, 0.3, 0.3, 0.3]))))), /^NO VERDICT \(harness-noisy\)/);
     assert.match(String(emptyCheck(JSON.parse(JSON.stringify(e([0.3, NaN, 0.3, 0.3, 0.3, 0.3]))))), /^NO VERDICT \(harness-noisy\)/);
     assert.match(String(emptyCheck([{ lane: 'x.smi', windows: [0, 0, 0, 0, 0, 0] }])), /no empty-lane row/);
+    // neon-3: a negative window is not a clean harness; judge() is the verdict path, fed rows as the real path reads
+    // them (JSON.parse of a serialized --json-like payload, LEDGER B6). -Infinity cannot arrive (JSON writes null).
+    const payload = (hw) => JSON.parse(JSON.stringify({ n: N, windows: K, benches: [{ rows: [
+        { lane: HARNESS, windows: hw }, ...LANES.map((l) => ({ lane: l, windows: Array(K).fill(0.3) }))] }] })).benches[0].rows;
+    assert.deepEqual(judge(payload([0.3, 0.3, 0.3, 0.3, 0.3, 0.3]), expectInlined), { noVerdict: null, failing: [] }, 'clean payload');
+    assert.deepEqual(judge(payload([0.3, 0, -0, 0.3, 1.0, 0.3]), expectInlined), { noVerdict: null, failing: [] }, '0, -0 and 1.0 are inside');
+    assert.deepEqual(judge(payload([-0.5, 0.3, 0.3, 0.3, 0.3, 0.3]), expectInlined), { noVerdict: null, failing: [] }, 'window 0 is not read');
+    for (const neg of [-0.5, -5, -0.01]) {
+        for (let k = 1; k < K; k++) {
+            const w = [0.3, 0.3, 0.3, 0.3, 0.3, 0.3];
+            w[k] = neg;
+            const v = judge(payload(w), expectInlined);
+            if (k === 1) console.log('# C-harness forced ' + neg + ' in window ' + k + ' (via JSON, judge): ' + v.noVerdict);
+            assert.match(String(v.noVerdict), /^NO VERDICT \(harness-noisy\): empty lane window .* outside \[0, 1\] B\/op/, 'harness ' + neg + ' window ' + k);
+        }
+    }
+    assert.equal(JSON.parse(JSON.stringify([-Infinity]))[0], null, '-Infinity arrives as null (already refused)');
+    assert.match(String(judge(payload([0.3, 0.3, -Infinity, 0.3, 0.3, 0.3]), expectInlined).noVerdict), /^NO VERDICT \(harness-noisy\)/);
     assert.match(String(emptyCheck(e([0.3, 0.3, 0.3, 0.3, 0.3]))), /no empty-lane row/);
     if (RUN_A) assert.ok(RUN_A.rows.some((r) => r.lane === HARNESS), 'run A measured no empty lane');
     if (RUN_B) assert.ok(RUN_B.rows.some((r) => r.lane === HARNESS), 'run B measured no empty lane');
@@ -507,13 +572,11 @@ test('control: no LiteUtils -> NO VERDICT and a non-zero exit', () => {
     const env = { ...process.env };
     delete env.LITE_UTILS_DIR;
     const r = resolveTools({ root: empty, env });
-    assert.equal(r.ok, false);
-    assert.match(r.reason, /no LiteUtils/);
+    assert.match(String(luVerdict(r)), /^NO VERDICT: no LiteUtils/);
     const c = runBounded(process.execPath, [LU_CLI, '--root', empty], { timeoutMs: 60000, env, cwd: PKG_ROOT });
     console.log('# C-nolu exit ' + c.status + ': ' + c.stdout.trim());
     assert.equal(c.status, 2);
     assert.match(c.stdout, /^NO VERDICT: no LiteUtils/);
     const bad = resolveTools({ root: empty, env: { LITE_UTILS_DIR: join(empty, 'nope') } });
-    assert.equal(bad.ok, false);
-    assert.match(bad.reason, /not a directory/);
+    assert.match(String(luVerdict(bad)), /^NO VERDICT: LITE_UTILS_DIR is not a directory/);
 });

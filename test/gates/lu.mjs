@@ -15,10 +15,15 @@
 // tool file, node --version, load average. A LITE_UTILS_DIR whose commit cannot be read is NO VERDICT.
 // Every spawn here and in the gates goes through runBounded(): a kill timer on each child (SIGTERM; the
 // bash tool SIGKILLs its own probe on SIGTERM), never a kill of anything this process did not start.
+// Identity (neon-4, audit-neon): BOTH sources' package.json must name @zakkster/lite-utils; a LITE_UTILS_DIR must be
+// the TOP of its own git work tree (`git rev-parse --show-toplevel` realpath === realpath(dir); git walks UP, so a
+// non-git subdir of another repo would otherwise lend that repo's commit); every git child runs with GIT_DIR,
+// GIT_INDEX_FILE and GIT_WORK_TREE removed from its env (an inherited GIT_DIR reads another repo's HEAD); the CLI
+// guard compares realpaths, so `node <symlink to lu.mjs>` runs the CLI (exit 2 on NO VERDICT), never exits 0 silently.
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { loadavg } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -49,7 +54,8 @@ export function luVerdict(r) {
     return 'NO VERDICT: ' + reason;
 }
 
-/** Read <dir>/package.json -> { meta } or { reason } (missing, unreadable or not a JSON object). */
+/** Read <dir>/package.json -> { meta } or { reason } (missing, unreadable, not a JSON object, version outside the
+ *  range, or a name other than LU_NAME -- checked after the version so a missing-version row keeps its reason). */
 function readMeta(pj, what) {
     let meta;
     try { meta = JSON.parse(readFileSync(pj, 'utf8')); } catch (e) {
@@ -60,6 +66,9 @@ function readMeta(pj, what) {
     }
     if (!luVersionOk(meta.version)) {
         return { reason: what + ' version ' + JSON.stringify(meta.version) + ' is not inside ' + LU_RANGE + ' (' + pj + ')' };
+    }
+    if (meta.name !== LU_NAME) {
+        return { reason: what + ' package.json names ' + JSON.stringify(meta.name) + ', not ' + LU_NAME + ' (' + pj + ')' };
     }
     return { meta };
 }
@@ -85,8 +94,21 @@ function isDir(p) {
     try { return statSync(p).isDirectory(); } catch { return false; }
 }
 
+/** process.env minus the variables that point git at ANOTHER repo / index / work tree (neon-4). */
+export function gitEnv(base = process.env) {
+    const e = { ...base };
+    delete e.GIT_DIR;
+    delete e.GIT_INDEX_FILE;
+    delete e.GIT_WORK_TREE;
+    return e;
+}
+
+function realOrNull(p) {
+    try { return realpathSync(p); } catch { return null; }
+}
+
 function git(dir, args) {
-    const r = runBounded('git', ['-C', dir, ...args], { timeoutMs: 20000 });
+    const r = runBounded('git', ['-C', dir, ...args], { timeoutMs: 20000, env: gitEnv() });
     if (r.status !== 0) return null;
     return r.stdout;
 }
@@ -126,6 +148,13 @@ function fromEnvDir(root, v) {
     const head = git(dir, ['rev-parse', 'HEAD']);
     if (head === null || !/^[0-9a-f]{40}\n?$/.test(head)) {
         return { ok: false, reason: 'cannot read the LiteUtils git commit in ' + dir + ' (provenance, SPEC-p1 R7)' };
+    }
+    const top = git(dir, ['rev-parse', '--show-toplevel']);
+    const realTop = top === null ? null : realOrNull(top.replace(/\n$/, ''));
+    const realDir = realOrNull(dir);
+    if (realTop === null || realDir === null || realTop !== realDir) {
+        return { ok: false, reason: 'LITE_UTILS_DIR is not the top of its own git work tree (dir ' + dir + ', git top ' +
+            (top === null ? 'unreadable' : top.trim()) + '): its HEAD would be another repo\'s (provenance, SPEC-p1 R7)' };
     }
     const dirty = {};
     for (const t of TOOLS) {
@@ -179,7 +208,7 @@ export function provenanceLines(r) {
 
 // ---- CLI ----------------------------------------------------------------------------------------
 const SELF = fileURLToPath(import.meta.url);
-if (process.argv[1] && existsSync(process.argv[1]) && resolve(process.argv[1]) === SELF) {
+if (process.argv[1] && existsSync(process.argv[1]) && realOrNull(process.argv[1]) === realOrNull(SELF)) {
     let root = PKG_ROOT;
     const argv = process.argv.slice(2);
     for (let i = 0; i < argv.length; i++) {
