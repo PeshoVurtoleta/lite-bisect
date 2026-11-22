@@ -15,7 +15,7 @@
 //  T4 fw oracle teeth: an UNTIMED check per fw lane runs every copy's fw runner once over a VARIANT array whose top two
 //     keys differ (a delete ending at len instead of len + 1 is invisible on the timed arrays); mismatch = STOP ORACLE.
 //  T5 selftest: the 10 injection children (new exit codes + VERDICT line), 3 live-verdict-path children (clean subset,
-//     live-drift, fw-delete-end) and the fixture controls F1-F11 (+ one control per remaining verdictOf check row, law 9)
+//     live-drift, fw-delete-end) and the fixture controls F1-F45 (F12-F45: one control per remaining verdictOf check row, law 9)
 //     as child `--verdict-file` processes on the sha-pinned R4 fixtures bench/ab-fixtures/*.log.
 //  Plus the path changes this location needs (PKG = one level up) and the gate rule printed in the HEADER (law 10).
 // Kernels are cut by anchor from the FROZEN bench/research/frozen/88e5b1c-10add825/Bisect.js (full sha256 checked) and
@@ -29,11 +29,12 @@
 //   node ab-gate.mjs --verdict-file <log|->                     the verdict of a saved gate log (untimed, needs no flags)
 //
 // Gate (PROPOSAL-ab section 2): per OS, PASS = every gated lane reads its expected word with its controls valid (A/A in
-// [0.95, 1.05], SLOW median > 1.25 and q1 > 1.10, B/op 0 (< 1/64) on A, B, AA, SLOW, TF); FINDING = a clean gated lane
+// [0.95, 1.05], SLOW median > 1.25 and q1 > 1.10, every aa / slow median / q1 / q3 finite, B/op in [0, 1/64) on A, B, AA,
+// SLOW, TF); FINDING = a clean gated lane
 // reads another word (AB-G1 / AB-G1a: even with other gated lanes VOID in a complete run, listed; a missing gated
 // lane is a wrong run shape: NO VERDICT, the wrong gated words listed); NO VERDICT = any VOID or missing gated lane, a
-// wrong run shape (not exactly one `HEADER rung=ALL TIMED` with K=11 C=3 inject=null, no `PROV end`, a lane without
-// exactly one RESULT line) or any STOP / CRASH. NO VERDICT is never a PASS. The gate passes only when both OS read PASS
+// wrong run shape (not exactly one `HEADER rung=ALL TIMED` with K=11 C=3 NQ2=524288 minWindow=131072 inject=null, not
+// exactly one `PROV start` and one `PROV end`, a lane without exactly one RESULT line) or any STOP / CRASH. NO VERDICT is never a PASS. The gate passes only when both OS read PASS
 // in the same dispatch. REPORTED lanes (walk:256:1, walk:4096:4, fw:1024, fw:2048 and the
 // report lanes) are printed in the REPORTED line and never read by the verdict.
 //
@@ -163,7 +164,7 @@ const MARGIN_TXT = 'Margin per kill-rule lane = the smaller of |median - thresho
 const RULE_AB2_RO = 'Read-only (ro:16, 256, 4096, 65536): default stands if no ro lane reads SLOWER; any ro lane SLOWER = FINDING for Q-AB-README. Any VOID ro lane, an incomplete ro set or K != 11 = UNRULED for this half.';
 const RULE_AB2_FW = 'Feeds-write (fw:16, 128, 1024, 2048): I1 REPRODUCED if >= 2 fw lanes read SLOWER and none FASTER; I1 CONTRADICTED if any fw lane reads FASTER; else I1 NOT SHOWN (either of the last two = FINDING for Q-AB-FEEDSWRITE). Any VOID fw lane, an incomplete fw set or K != 11 = UNRULED for this half.';
 
-const RULE_GATE = 'Gate (PROPOSAL-ab section 2, ROADMAP 5f; AB-G1, AB-G1a, AB-G2): per OS, PASS = every gated lane reads its expected word with its controls valid (no VOID tag or line; recomputed from the printed numbers: aa median in [0.95, 1.05], slow median > 1.25 and q1 > 1.10, bop A, B, AA, SLOW each < 1/64, B/A finite and word() of it = the printed word); FINDING = a clean gated lane reads another word (AB-G1 / AB-G1a: even with other gated lanes VOID in a complete run, listed; a missing gated lane is a wrong run shape: NO VERDICT, the wrong gated words listed); NO VERDICT = any VOID or missing gated lane, a wrong run shape (exactly one HEADER rung=ALL TIMED with K=11 C=3 inject=null, a PROV end line, one RESULT line per lane) or any STOP / CRASH. NO VERDICT is never a PASS; the gate passes only when both OS read PASS in the same dispatch; one re-dispatch of a NO VERDICT run (Q-AB-K), never a re-run of a FINDING.';
+const RULE_GATE = 'Gate (PROPOSAL-ab section 2, ROADMAP 5f; AB-G1, AB-G1a, AB-G2): per OS, PASS = every gated lane reads its expected word with its controls valid (no VOID tag or line; recomputed from the printed numbers: aa median / q1 / q3 finite and median in [0.95, 1.05], slow median / q1 / q3 finite, median > 1.25 and q1 > 1.10, bop A, B, AA, SLOW each a number in [0, 1/64), B/A finite and word() of it = the printed word); FINDING = a clean gated lane reads another word (AB-G1 / AB-G1a: even with other gated lanes VOID in a complete run, listed; a missing gated lane is a wrong run shape: NO VERDICT, the wrong gated words listed); NO VERDICT = any VOID or missing gated lane, a wrong run shape (exactly one HEADER rung=ALL TIMED with K=11 C=3 NQ2=524288 minWindow=131072 inject=null, exactly one PROV start and one PROV end line, one RESULT line per lane) or any STOP / CRASH. NO VERDICT is never a PASS; the gate passes only when both OS read PASS in the same dispatch; one re-dispatch of a NO VERDICT run (Q-AB-K), never a re-run of a FINDING.';
 
 class Stop extends Error { constructor(reason, msg) { super(msg); this.reason = reason; } }
 function stop(reason, msg) { throw new Stop(reason, msg); }
@@ -890,6 +891,7 @@ const RESULT_RE = /^RESULT lane=(\S+) /;
 const VOIDLINE_RE = /^VOID (\S+) lane=(\S+): /;
 const NUM_RE = /^-?\d+(\.\d+)?$/;
 const BOP_COLS = Object.freeze(['A', 'B', 'AA', 'SLOW']);
+const fin3 = (s) => Number.isFinite(s.med) && Number.isFinite(s.q1) && Number.isFinite(s.q3);
 /** Strict number from printed text: '', 'NaN', 'Infinity' or any other text -> NaN (null is not zero). */
 const num = (s) => (typeof s === 'string' && NUM_RE.test(s) ? Number(s) : NaN);
 /** The value of ` <key>=` (up to the next space); null unless the key occurs exactly once in the line. */
@@ -916,18 +918,25 @@ function laneState(id, line, voidKinds) {
     const printed = field(line, 'word');
     const aa = stat3(field(line, 'aa')), slow = stat3(field(line, 'slow'));
     if (!(Number.isFinite(ratio.med) && Number.isFinite(ratio.q1) && Number.isFinite(ratio.q3))) why.push('B/A not finite');
-    if (!aaOk(aa)) why.push('aa ' + fmtS(aa, 3) + ' not in [' + AA_LO + ', ' + AA_HI + ']');
-    if (!slowOk(slow)) why.push('slow ' + fmtS(slow, 3) + ' not med > 1.25 and q1 > 1.10');
+    // BIS-neon-2: aaOk reads only med and slowOk only med + q1, so a NaN quartile passed them; a control is finite first
+    if (!fin3(aa)) why.push('aa ' + fmtS(aa, 3) + ' not finite');
+    else if (!aaOk(aa)) why.push('aa ' + fmtS(aa, 3) + ' not in [' + AA_LO + ', ' + AA_HI + ']');
+    if (!fin3(slow)) why.push('slow ' + fmtS(slow, 3) + ' not finite');
+    else if (!slowOk(slow)) why.push('slow ' + fmtS(slow, 3) + ' not med > 1.25 and q1 > 1.10');
     const bopTxt = field(line, 'bop');
     const bops = bopTxt === null ? [] : bopTxt.split(',');
     const seen = new Set();
+    const neg = [];
     let bopOk = bops.length === BOP_COLS.length;
     for (const b of bops) {
         const kv = b.split(':');
-        if (kv.length !== 2 || !BOP_COLS.includes(kv[0]) || seen.has(kv[0]) || !(num(kv[1]) < ALLOC_MAX)) bopOk = false;
+        const v = kv.length === 2 ? num(kv[1]) : NaN;
+        if (kv.length !== 2 || !BOP_COLS.includes(kv[0]) || seen.has(kv[0]) || !(v < ALLOC_MAX)) bopOk = false;
+        else if (!(v >= 0)) neg.push(b);   // BIS-neon-2: a B/op is a count; v in [0, 1/64) is also finite
         seen.add(kv[0]);
     }
     if (!bopOk) why.push('bop ' + bopTxt + ' not A, B, AA, SLOW each < 1/64');
+    if (neg.length > 0) why.push('bop ' + neg.join(',') + ' negative (want >= 0)');
     const w = word(ratio);
     if (printed !== w) why.push('printed word=' + printed + ' but B/A ' + fmtS(ratio, 3) + ' reads ' + w);
     return { id, word: printed, ratio, clean: why.length === 0, why };
@@ -950,11 +959,15 @@ function verdictOf(lines) {
             if (m[2] !== 'TIMED') shape.push('not TIMED');
             if (m[7] !== String(K_FULL)) shape.push('K=' + m[7] + ' (want ' + K_FULL + ')');
             if (m[8] !== String(C_COPIES)) shape.push('C=' + m[8] + ' (want ' + C_COPIES + ')');
+            if (m[9] !== String(NQ2)) shape.push('NQ2=' + m[9] + ' (want ' + NQ2 + ')');
+            if (m[10] !== String(MIN_N)) shape.push('minWindow=' + m[10] + ' (want ' + MIN_N + ')');
             if (m[11] !== 'null') shape.push('inject=' + m[11] + ' (want null)');
         }
     }
     const stops = lines.filter((l) => l.startsWith('STOP ') || l.startsWith('CRASH '));
     for (const l of stops) shape.push(l.startsWith('CRASH ') ? 'CRASH' : 'STOP ' + l.slice(5).split(':')[0]);
+    const provStart = lines.filter((l) => l.startsWith('PROV start ')).length;
+    if (provStart !== 1) shape.push(provStart + ' PROV start lines (want 1)');
     const provEnd = lines.filter((l) => l.startsWith('PROV end ')).length;
     if (provEnd !== 1) shape.push(provEnd + ' PROV end lines (want 1)');
     const res = new Map(), unknown = [];
@@ -1028,7 +1041,7 @@ function parseCli(argv) {
         else stop('CLI', 'unknown flag ' + a);
     }
     if (o.verdictFile !== null && (o.selftest || o.oracleOnly || o.rung !== null || o.lanes !== null || o.kGiven)) stop('CLI', '--verdict-file takes no other flag');
-    if (o.selftest && (o.oracleOnly || o.rung !== null || o.lanes !== null)) stop('CLI', '--selftest takes no other flag');
+    if (o.selftest && (o.oracleOnly || o.rung !== null || o.lanes !== null || o.kGiven)) stop('CLI', '--selftest takes no other flag');
     if (!o.selftest && o.verdictFile === null && !RUNG_NAMES.includes(o.rung)) stop('CLI', 'give --rung ' + RUNG_NAMES.join('|') + ' [--oracle-only], --selftest or --verdict-file <log|->');
     if (!Number.isInteger(o.K) || !(o.K >= 1 && o.K <= 51)) stop('CLI', '--K 1..51');
     if (o.lanes !== null) {
@@ -1053,8 +1066,8 @@ function verdictFile(path) {
 // ---------------------------------------------------------------- selftest (T5)
 // (c) fixture controls: [id, fixture, mutations, want exit, VERDICT prefix, texts the VERDICT line must name]. A mutation
 // is ['sub', from, to] (exactly one occurrence), ['drop' | 'dup', line prefix] (exactly one line), ['append', text].
-// A mutation that does not match exactly once = that row FAILs. F1-F11 = the brief; F12-F36 = one control per remaining
-// verdictOf check row (LEDGER law 9), each tripping that row alone.
+// A mutation that does not match exactly once = that row FAILs. F1-F11 = the brief; F12-F45 = one control per remaining
+// verdictOf check row (LEDGER law 9), each tripping that row alone (F37-F45: audit-neon BIS-neon-2).
 const MUT_F3 = ['sub', 'B/A=0.338[0.338..0.339] word=FASTER', 'B/A=1.338[1.338..1.339] word=SLOWER'];   // ro:16 -> SLOWER, consistent
 const MUT_F4 = [['sub', 'aa=1.001[1.000..1.003] slow=5.821[5.815..5.823]', 'aa=1.080[1.070..1.090] slow=5.821[5.815..5.823]'],
     ['sub', 'branches=3145826\n', 'branches=3145826 VOID=[AA-DRIFT 1.080[1.070..1.090]]\n']];             // uni:4096 VOID AA-DRIFT
@@ -1095,6 +1108,17 @@ const FIXTURE_CASES = Object.freeze([
     ['F34 gated ro:16 word= field twice', 'ubuntu', [['sub', 'branches=1089206\n', 'branches=1089206 word=SLOWER\n']], 2, 'VERDICT NO VERDICT (gated lane not clean)', ['ro:16 printed word=null']],
     ['F35 PROV end line twice', 'ubuntu', [['dup', 'PROV end ']], 2, 'VERDICT NO VERDICT (run shape)', ['2 PROV end']],
     ['F36 gated uni:256 bop A empty (null is not zero)', 'ubuntu', [['sub', 'bop=SLOW:0.0000,AA:0.0000,B:0.0000,A:0.0000 win=262144 reps=2 branches=2098642', 'bop=SLOW:0.0000,AA:0.0000,B:0.0000,A: win=262144 reps=2 branches=2098642']], 2, 'VERDICT NO VERDICT (gated lane not clean)', ['uni:256 bop']],
+    ['F37 gated uni:256 bop B -0.0001 (just below the 0 floor)', 'ubuntu', [['sub', 'bop=SLOW:0.0000,AA:0.0000,B:0.0000,A:0.0000 win=262144 reps=2 branches=2098642', 'bop=SLOW:0.0000,AA:0.0000,B:-0.0001,A:0.0000 win=262144 reps=2 branches=2098642']], 2, 'VERDICT NO VERDICT (gated lane not clean)', ['uni:256 bop B:-0.0001 negative']],
+    ['F38 gated uni:4096 aa q1 NaN (median kept)', 'ubuntu', [['sub', 'aa=1.001[1.000..1.003] slow=5.821[5.815..5.823]', 'aa=1.001[NaN..1.003] slow=5.821[5.815..5.823]']], 2, 'VERDICT NO VERDICT (gated lane not clean)', ['uni:4096 aa 1.001[NaN..1.003] not finite']],
+    ['F39 gated uni:4096 aa q3 NaN (median kept)', 'ubuntu', [['sub', 'aa=1.001[1.000..1.003] slow=5.821[5.815..5.823]', 'aa=1.001[1.000..NaN] slow=5.821[5.815..5.823]']], 2, 'VERDICT NO VERDICT (gated lane not clean)', ['uni:4096 aa 1.001[1.000..NaN] not finite']],
+    ['F40 gated uni:4096 slow q3 NaN (median, q1 kept)', 'ubuntu', [['sub', 'aa=1.001[1.000..1.003] slow=5.821[5.815..5.823]', 'aa=1.001[1.000..1.003] slow=5.821[5.815..NaN]']], 2, 'VERDICT NO VERDICT (gated lane not clean)', ['uni:4096 slow 5.821[5.815..NaN] not finite']],
+    ['F41 HEADER NQ2=1', 'ubuntu', [['sub', ' NQ2=524288 ', ' NQ2=1 ']], 2, 'VERDICT NO VERDICT (run shape)', ['NQ2=1 (want 524288)']],
+    ['F42 HEADER minWindow=1', 'ubuntu', [['sub', ' minWindow=131072 ', ' minWindow=1 ']], 2, 'VERDICT NO VERDICT (run shape)', ['minWindow=1 (want 131072)']],
+    ['F43 PROV start line deleted', 'ubuntu', [['drop', 'PROV start ']], 2, 'VERDICT NO VERDICT (run shape)', ['0 PROV start lines (want 1)']],
+    ['F44 PROV start line twice', 'ubuntu', [['dup', 'PROV start ']], 2, 'VERDICT NO VERDICT (run shape)', ['2 PROV start lines (want 1)']],
+    // a 310-digit numeral passes NUM_RE and Number() makes it Infinity (the literal text 'Infinity' is NaN via num()): only
+    // Number.isFinite in fin3 refuses it; a !isNaN fin3 would pass it (its median 1.001 is in band)
+    ['F45 gated uni:4096 aa q1 Infinity (310-digit numeral)', 'ubuntu', [['sub', 'aa=1.001[1.000..1.003] slow=5.821[5.815..5.823]', 'aa=1.001[1' + '0'.repeat(309) + '.000..1.003] slow=5.821[5.815..5.823]']], 2, 'VERDICT NO VERDICT (gated lane not clean)', ['uni:4096 aa 1.001[Infinity..1.003] not finite']],
 ]);
 function applyMut(text, m) {
     if (m[0] === 'sub') {
