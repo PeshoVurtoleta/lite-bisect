@@ -13,6 +13,8 @@
 //       the last; '_' and one-dash spellings too; --single_threaded_gc alone is refused, fail closed) -> exit 2
 //       with the GC NO VERDICT line, before the build import (P3-R10, LEDGER B11).
 //   (d) LITE_BISECT_TORTURE_LEAK=1 -> exit 1.
+//   (e) a failing assertPlantLane message carries the child's GATE line and stderr (synthetic child, no spawn).
+// A failing (a)/(b) assertion prints the child's GATE line and its stderr fails lines (CI shows nothing else).
 // Spawns that expect a verdict ((a), (b), (d)) pass npm run torture's flags: TIER, GC and PIN.
 // The clean run is `npm run torture` (verify), not repeated here. Plants live in a mktemp dir, removed at
 // exit. NODE_V8_COVERAGE is dropped from the child env (c8 must not instrument the torture child).
@@ -66,15 +68,24 @@ function torture(flags, env = {}) {
     return r;
 }
 
+// The child's GATE line and full stderr (the torture's `fails` lines), appended to every assertPlantLane message:
+// the LANE lines alone cannot say WHY an unplanted lane failed (e.g. settle drained=false).
+function childDiag(r) {
+    const g = /^GATE .*$/m.exec(r.stdout);
+    const e = r.stderr.replace(/^(?:[ \t]*\n)+/, '').trimEnd();   // blank lines off; each line's indent kept verbatim
+    return '\n-- child GATE: ' + (g ? g[0] : '(no GATE line)') + '\n-- child stderr:\n' + (e || '(empty stderr)');
+}
+
 // A FAIL attributed to the planted lane: its LANE line has minor > 0 and FAIL; every other kernel lane is ok.
 function assertPlantLane(r) {
+    const diag = childDiag(r);
     const lanes = r.stdout.split('\n').filter((l) => l.startsWith('LANE '));
-    assert.equal(lanes.length, N_LANES, 'LANE lines: ' + lanes.length);
+    assert.equal(lanes.length, N_LANES, 'LANE lines: ' + lanes.length + diag);
     const bad = lanes.filter((l) => !l.endsWith(' ok'));
-    assert.deepEqual(bad.map((l) => l.split(' ')[1]), [PLANT_LANE], bad.join('\n'));
+    assert.deepEqual(bad.map((l) => l.split(' ')[1]), [PLANT_LANE], bad.join('\n') + diag);
     const m = /^LANE upperBoundBranchyF64 major=0 minor=(\d+) .* FAIL$/.exec(bad[0]);
-    assert.ok(m && Number(m[1]) > 0, 'planted lane not failed by a steady minor: ' + bad[0]);
-    assert.match(r.stdout, /^GATE .* \| FAIL$/m);
+    assert.ok(m && Number(m[1]) > 0, 'planted lane not failed by a steady minor: ' + bad[0] + diag);
+    assert.match(r.stdout, /^GATE .* \| FAIL$/m, 'no "GATE ... | FAIL" line in the child stdout' + diag);
 }
 
 test('(a) a 16 B/op box planted in upperBoundBranchyF64 -> torture exit 1', () => {
@@ -139,4 +150,53 @@ test('(d) LITE_BISECT_TORTURE_LEAK=1 -> torture exit 1', () => {
     console.log('# (d) exit ' + r.status + ' | ' + r.stdout.split('\n').filter((l) => l.startsWith('PHASE1') || l.startsWith('GATE')).join(' | '));
     assert.equal(r.status, 1, r.stdout + r.stderr);
     assert.match(r.stdout, /^PHASE1 .* size=(\d{4,}) /m);
+});
+
+test('(e) control: a failing assertPlantLane message carries the child\'s stderr fails lines and its GATE line (synthetic child, no spawn)', () => {
+    const EXTRA = 'lowerBoundHintI32';
+    const PLANTED = 'LANE upperBoundBranchyF64 major=0 minor=9 abGrowth=0 settled=true retainedB/op=0.004 FAIL';
+    const GATE = 'GATE leak=size 0/16 findings=0 warnings=0 | gc major=0 minor=9 maxMs=0.31 | retained=0.004 B/op | FAIL';
+    const ERR_PLANT = '  lane upperBoundBranchyF64 verdict=fail retained=0.004 B/op phases.steady.gc.minor=9 settle drained=true waited=2.7ms';
+    const ERR_EXTRA = '  lane lowerBoundHintI32 verdict=pass retained=0.001 B/op  settle drained=false waited=304.7ms';
+    // Lane names from the oracle roster (KERNELS x TYPE_NAMES), so the LANE count is N_LANES by construction.
+    const child = (extraFails) => {
+        const lines = [];
+        for (const k of Object.keys(KERNELS)) {
+            for (const T of TYPE_NAMES) {
+                const name = k + T;
+                if (name === PLANT_LANE) lines.push(PLANTED);
+                else if (name === EXTRA && extraFails) lines.push('LANE ' + EXTRA + ' major=0 minor=0 abGrowth=0 settled=true retainedB/op=0.001 FAIL');
+                else lines.push('LANE ' + name + ' major=0 minor=0 abGrowth=0 settled=true retainedB/op=0.000 ok');
+            }
+        }
+        lines.push(GATE, '');
+        return { stdout: lines.join('\n'), stderr: (extraFails ? [ERR_PLANT, ERR_EXTRA] : [ERR_PLANT]).join('\n') + '\n', status: 1 };
+    };
+    const r = child(true);
+    assert.equal(r.stdout.split('\n').filter((l) => l.startsWith('LANE ')).length, N_LANES);
+    assert.ok(r.stdout.includes(PLANTED) && r.stdout.includes('LANE ' + EXTRA + ' '), 'fixture lacks the planted or the extra lane');
+    assert.throws(() => assertPlantLane(r), (err) => {
+        assert.ok(err instanceof assert.AssertionError, 'not an AssertionError: ' + err);
+        for (const want of [ERR_PLANT, ERR_EXTRA, GATE]) {
+            assert.ok(err.message.includes(want), 'message lacks ' + JSON.stringify(want) + ':\n' + err.message);
+        }
+        return true;
+    });
+    // Twin: the extra lane ok and its stderr line gone -> no throw, so the throw above is the extra lane's.
+    assertPlantLane(child(false));
+    // Rows for the other three messages: a LANE line missing (crashed child), the planted lane without a steady
+    // minor, the GATE line not FAIL (and absent). Each message must carry ERR_PLANT and the GATE text verbatim.
+    const base = child(false);
+    for (const [stdout, gate] of [
+        [base.stdout.replace(/^LANE (?!upperBoundBranchyF64 ).*\n/m, ''), GATE],
+        [base.stdout.replace(PLANTED, PLANTED.replace(' minor=9 ', ' minor=0 ')), GATE],
+        [base.stdout.replace(GATE, GATE.replace(' | FAIL', ' | ok')), GATE.replace(' | FAIL', ' | ok')],
+        [base.stdout.replace(GATE + '\n', ''), '(no GATE line)'],
+    ]) {
+        assert.throws(() => assertPlantLane({ stdout, stderr: base.stderr, status: 1 }), (err) => {
+            assert.ok(err instanceof assert.AssertionError && err.message.includes(ERR_PLANT) &&
+                err.message.includes('-- child GATE: ' + gate), 'row message lacks the diag:\n' + err.message);
+            return true;
+        });
+    }
 });

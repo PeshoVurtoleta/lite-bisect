@@ -292,7 +292,7 @@ const RETAIN = ['CONTROL-retain', (i) => {
 
 function drive(fn, n) { for (let i = 0; i < n; i++) fn(i); }
 
-// One lane in its own profiler window. Returns { s, report, bpo }.
+// One lane in its own profiler window. Returns { s, report, st, bpo } (st: the settle() result, print-only).
 async function measureLane(fn) {
     drive(fn, WARM);
     const gc = new GcProfiler(1024).start();
@@ -311,7 +311,7 @@ async function measureLane(fn) {
     gc.stop();
     const report = checkNoGc(s, { maxArrayBuffersGrowth: 0, phases: { steady: { maxMajor: 0, maxMinor: 0 } } });
     if (!st || st.drained === false) report.ok = false;
-    return { s, report, bpo: (m1.heapUsed - m0.heapUsed) / HOT };
+    return { s, report, st, bpo: (m1.heapUsed - m0.heapUsed) / HOT };
 }
 
 // The GC channels of one lane: steady major 0, arrayBuffers growth 0, settled, observer drained.
@@ -328,7 +328,7 @@ let sumMajor = 0, sumMinor = 0, maxMs = 0, maxBpo = -Infinity, minBpo = Infinity
 let retFlagged = false;
 for (const [name, fn, mustTrip] of LANES.concat([[RETAIN[0], RETAIN[1], true]])) {
     const m = await measureLane(fn);
-    const { s, report, bpo } = m;
+    const { s, report, st, bpo } = m;
     const sg = s.phases.steady.gc;
     const ok = laneOk(mustTrip === true || gcPass(m), bpo);
     if (mustTrip === true) {
@@ -347,8 +347,11 @@ for (const [name, fn, mustTrip] of LANES.concat([[RETAIN[0], RETAIN[1], true]]))
     if (bpo > maxBpo) maxBpo = bpo;       // a NaN bpo fails its own lane in laneOk
     if (bpo < minBpo) minBpo = bpo;
     if (ok) lanesOk++;
+    // Print-only: drained=false is the settle() timeout (lite-gc-profiler maxWaitMs 200); a missing st prints settle=none.
     else fails.push('lane ' + name + ' verdict=' + report.verdict + ' retained=' + bpo.toFixed(3) + ' B/op ' +
-        report.violations.map((v) => v.metric + '=' + v.actual).join(','));
+        report.violations.map((v) => v.metric + '=' + v.actual).join(',') +
+        (st ? ' settle drained=' + st.drained + ' waited=' +
+            (typeof st.waited === 'number' ? st.waited.toFixed(1) : String(st.waited)) + 'ms' : ' settle=none'));
     console.log('LANE ' + name + ' major=' + sg.major + ' minor=' + sg.minor + ' abGrowth=' +
         s.arrayBuffers.growthBytes + ' settled=' + s.arrayBuffers.settled + ' retainedB/op=' + bpo.toFixed(3) +
         ' ' + (ok ? 'ok' : 'FAIL'));

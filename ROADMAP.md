@@ -353,6 +353,27 @@ Also recorded 2026-11-22, step 1 of the release program (P3-R5a) MET: nightly.ym
 43426301625 (11-13), 43591341020, 43712659199, 43872490491, 44096420609, 44313222939, 44537310359, 44745146653,
 44906461931 (11-21) (read with `gh run list --workflow nightly.yml`, 2026-11-22).
 
+## 5h. Nightly-failure rulings (maintainer, 2026-11-22, AskUserQuestion in the NIGHTFAIL burst)
+
+Trigger: nightly.yml run 45024298534 (2026-11-22T12:49Z, commit 1d797ce), leg `nightly (macos-latest, node latest)`
+(node v27.0.0-alpha.0.1.1, image macos-26-arm64 20261117.0516), failed `npm test` at torture control (b): an UNPLANTED
+lane `LANE lowerBoundHintI32 major=0 minor=0 abGrowth=0 settled=true retainedB/op=0.001 FAIL`. Diagnosed (LEDGER B16):
+the torture's settle() hit lite-gc-profiler's 200 ms maxWaitMs on a stalled process (drained:false), and measureLane
+turns that into a lane FAIL with every count zero. Reproduced on node v26.8.2 with the unmodified harness and injected
+300 ms SIGSTOP stalls; not node 27 specific. Quoted:
+
+| Id | Question | Ruling | Means |
+|---|---|---|---|
+| NF-R1 | how the harness fixes the drained:false FAIL (UNIT 2b) | "Re-settle, then NO VERDICT (Recommended)" | When settle() returns drained:false, call settle() again with a 2000 ms budget; if it is still not drained, the run is NO VERDICT (exit 2, a 'torture: NO VERDICT -- GC observer not drained' line), never a pass. Every count channel is still read after the drain. Must-fail control: a test-only env hook (like LITE_BISECT_TORTURE_LEAK) that stalls one lane past both budgets -> exit 2; one that stalls past 200 ms only -> exit 0 with that lane drained. Revert check: the stall-past-200ms row exits 1 on the old harness. Spec: .handoff/nightfail/SPEC-2b.md |
+| NF-R2 | what the release needs before step 3 (ab.yml) and step 4 (/release 1.0.0) | "Fix + 1 green nightly (Recommended)" | Commit 2a (+2b if ruled); the next scheduled nightly on that commit must be green on all legs, then dispatch ab.yml and run /release 1.0.0. The streak stands; this failure is explained, not absorbed. |
+
+Also recorded 2026-11-22, step 2 of the release program (P1-R1 / P3-R4) DONE: ci.yml run 45060651825 on 5e54c19, all
+11 jobs green; both `gates` legs (ubuntu-latest, macos-latest; node 26.8.2) 20 / 20 with installed lite-utils 1.1.0;
+wall 2m15s (ubuntu) / 4m15s (macos) per `gh run view` job start / completion times, against timeout-minutes 30.
+C-late3's first HOSTED space-used-paired read: both
+legs `--json` signal "space-used-paired", late3 w0..5 0.00 0.00 0.32 16.00 16.00 16.00, `gate --max 1 (peak B/op):
+FAIL` as planned; C-late3-decide 58 planted pairs, 0 wrong.
+
 ## 6. Verification plan, by tier
 
 - **DETERMINISTIC (`npm test`):**
@@ -468,7 +489,8 @@ release, once the A/B result (P3-R1) is known. Each item names its trigger and w
    to ask) and move `gates` into ci.yml. (A green `gates` run is still needed BEFORE 1.0.)
    **Status 2026-11-22 (GATES unit, section 5g):** trigger met; devDependency `^1.1.0` (GU-R1), LITE_UTILS_DIR wins
    when set (GU-R2), ci.yml `gates` job (ubuntu-latest + macos-latest, node 26.8.2) written; the first green hosted
-   `gates` run is pending the maintainer's push (release-program step 2).
+   `gates` run is pending the maintainer's push (release-program step 2). DONE 2026-11-22: ci.yml run 45060651825 on
+   5e54c19, both `gates` legs green 20 / 20 (section 5h).
 5. **REPORTED n-sweep tables (P3-R1).** A 1.0.x docs-only release with provenance; gates nothing.
    - Method (Drepper, "What Every Programmer Should Know About Memory", 2007; principles, not its numbers): a
      working-set sweep, with n points placed on EACH host's own boundaries (L1D, L2, LLC, TLB reach = TLB

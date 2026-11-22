@@ -506,6 +506,44 @@ on these kernels. No single green gate authorises a release.
 - **Gate:** `npm test` (test/lu.test.mjs). Reopens with: an edit to luVersionOk or the env / installed order that no row
   of test/lu.test.mjs fails.
 
+### B16. A 200 ms settle() timeout failed an unplanted torture lane with every count zero *(FOUND 2026-11-22, nightly run 45024298534; RULED NF-R1 "Re-settle, then NO VERDICT (Recommended)", NF-R2 "Fix + 1 green nightly (Recommended)")*
+- **What happened:** nightly.yml run 45024298534 (2026-11-22T12:49Z, commit 1d797ce), leg `nightly (macos-latest, node
+  latest)` (node v27.0.0-alpha.0.1.1, image macos-26-arm64 20261117.0516; the same node and image were green in run
+  44906461931 the day before): torture control (b) saw the planted lane fail AND `LANE lowerBoundHintI32 major=0
+  minor=0 abGrowth=0 settled=true retainedB/op=0.001 FAIL`. The child's stderr `fails` lines never reached the log:
+  assertPlantLane's messages carried only the bad LANE lines. The other four legs were green. The failure came after
+  the step-1 streak (11-12..11-21).
+- **Root cause:** test/torture.mjs measureLane ends with `const st = await gc.settle();` (lite-gc-profiler 1.16.0
+  defaults: quietTicks 2, maxWaitMs 200) and `if (!st || st.drained === false) report.ok = false;`. A main-thread
+  stall that delays settle()'s first setTimeout(0) tick to >= 200 ms returns drained:false with no GC entry at all (a
+  later stall does not: with no new GC batch the second tick reaches quiet 2 and returns drained:true before it reads
+  the clock); gcPass then fails the lane with every count zero. By elimination, no other channel prints that line: with the
+  window's rules (steady maxMajor 0 / maxMinor 0, global maxArrayBuffersGrowth 0) and counts 0 / 0 / 0, settled true and
+  observed true, checkNoGc returns verdict 'pass' with no violations; only the drained overwrite is left. A wall-clock
+  budget inside a DETERMINISTIC gate: a test bug (the tier law), fail-closed but misclassified (drained:false means
+  "not verified", which the profiler's own doc says callers can downgrade to inconclusive). Node 27 is not needed.
+  The CI trigger is inferred, not observed: a host stall (a hosted macOS VM under node --test's parallel children: the
+  failing (b) test took 4,143 ms against 2,364 ms on the same leg the day before; REPORTED, one run each).
+- **Evidence:** .handoff/nightfail/run-45024298534.log; .handoff/nightfail/repro.mjs (spawns the UNMODIFIED
+  test/torture.mjs with npm run torture's flags; mode `stop` sends SIGSTOP, waits 300 ms, SIGCONT, random 0..400 ms
+  gaps). Host Apple arm64, node v26.8.2, untimed, load1 1.13 .. 1.82, 2026-11-22T19:31-19:33Z:
+  plain (b) plant 0 / 10 runs with an unplanted FAIL (repro-1.log); stalled (b) plant 6 / 10 (repro-1.log), one on
+  lowerBoundHintI32, each with the stderr line `lane X verdict=pass retained=<r> B/op ` (no violations; r 0.001,
+  once 0.047); an
+  instrumented copy printing st per lane (torture-instr.mjs): every unplanted FAIL `drained=false waited=303.4 ..
+  304.2` ms, 3 / 10 runs (repro-2-instr-stop.log); the CLEAN build stalled: 3 / 10 runs exit 1 (repro-3-clean-stop.log),
+  so a standalone `npm run torture` is exposed too.
+- **Law:** 9 and I7 (load moved a gate that looked deterministic; here a wall-clock budget, after B11's GC helper
+  thread). Fix (2a, diagnosability): a failing assertPlantLane prints the child's GATE line and stderr; the torture's
+  fails line names `settle drained=<b> waited=<n>ms`. Fix (2b, NF-R1; pending, UNIT 2b): re-settle with a 2000 ms
+  budget; still undrained = NO VERDICT (exit 2), never a pass, with a stall-hook must-fail control
+  (.handoff/nightfail/SPEC-2b.md).
+  Upstream lead for LiteGcProfiler: settle()'s 200 ms default turns a host stall into drained:false.
+- **Gate:** 2a: test/Bisect.torture-controls.test.mjs (e) (synthetic child; fails on the old assertPlantLane). 2b:
+  rows (f1)..(f4) per SPEC-2b (pending, UNIT 2b). Reopens with: an unplanted FAIL whose fails line reads
+  `settle drained=true` and no violation (a channel this entry did not see), or an undrained lane after the 2000 ms
+  re-settle on an idle host.
+
 ---
 
 ## C. Measurement lessons (this package's own runs)
