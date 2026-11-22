@@ -381,6 +381,20 @@ maintainer commits and pushes 2b, ONE green scheduled nightly.yml run on that co
 step 3 (ab.yml) and step 4 (/release 1.0.0). Also ci.yml run 45064201750 on 0192872 (2a): all 11 jobs green (gates legs
 20:03-20:07Z ubuntu, 20:03-20:08Z macos).
 
+## 5i. Audit 2026-11-22 (neon) rulings (maintainer, 2026-11-22, one AskUserQuestion sitting after UNIT 1)
+
+Trigger: independent audit "neon" (audit/2026-11-22/neon/, gitignored), 8 findings on cf1b677. UNIT 1 confirmed 8 / 8
+on HEAD through each gate's real verdict path (.handoff/audit-neon/CONFIRMATION.md; neon-1..4 fail open, class 1;
+neon-5..7 class 2; neon-8 class 3). Fixes are release-blocking (maintainer: "confirm and fix before the release").
+Quoted:
+
+| Id | Question | Ruling | Means |
+|---|---|---|---|
+| NEON-R1 | neon-6: two non-Smi arguments across a non-inlined call box 32 B/op | "Amend + gate (Recommended)" | AMENDS AU-R3: "one 16 B HeapNumber per such argument on Node" in Bisect.js, Bisect.d.ts, README, llms.txt, CHANGELOG and the QBOX test literal; a two-argument alloc lane (run B 28..36 B/op, run A the floor) gates the count |
+| NEON-R2 | neon-7: README / llms.txt point to "the source repository"; package.json has none | "Add repository (Recommended)" | package.json "repository": {"type":"git","url":"https://github.com/PeshoVurtoleta/lite-bisect.git"}; a docs-test row: a shipped doc with the pointer sentence requires pkg.repository |
+| NEON-R3 | neon-8: assertRange accepts {length:'5'} and {length:Infinity}, lo = hi = 1e20 | "Tighten assertRange (Recommended)" | typeof n === 'number' and Number.isSafeInteger on n, lo, hi (cold path, outside the generated kernels; AB-G2 kernel bytes unchanged), parity note + must-fail rows |
+| NF-R3 | (carried from NIGHTFAIL 2b) an unflagged + undrained must-fail retain control | "Keep NO VERDICT (as ruled)" | no change: UNDRAINED, exit 2 |
+
 ## 6. Verification plan, by tier
 
 - **DETERMINISTIC (`npm test`):**
@@ -513,6 +527,15 @@ release, once the A/B result (P3-R1) is known. Each item names its trigger and w
      onto the same cache sets (algorithmica, Zen 2: ~360 ns at 2^20 vs ~300 ns at 2^20 + 123). The P3 A/B lanes
      are all powers of two and stop at 65,536 Float64 (512 KB): the "branchless default" advice is evidenced
      only inside that range until a large-n sweep exists.
+   - Audit neon 2026-11-22 (PRELIMINARY; RESEARCH-DEEP (neon, 2026-11-22) section 3.1): the power-of-two cliff
+     is real on this Mac. Today's 103 B kernel is 1.38x slower at n = 65,536 than at 65,659 (46.06 vs 33.31 ns),
+     1.32x at 524,288 (103.34 vs 78.34), 1.36x at 2,097,152 (120.89 vs 89.06) and 1.71x at 4,194,304 (200.31 vs
+     117.12); on this host's 128 KB 8-way L1D every top-level midpoint of a power-of-two n lands in one set. So
+     the sweep MUST include non-power-of-two n (n + 123 beside each power of two) or it reports the cliff as the
+     kernel's speed. Candidate fix measured there: an anti-alias conditional peel (bl_aa_cond, 198 B), 0.717..0.774
+     of the 103 B kernel at 64K..4M powers of two and 0.992..1.023 (WITHIN) at 256 / 4,096 and every non-pow2 n.
+     Provenance: PRELIMINARY: one Apple M4 Pro (darwin arm64), node v26.8.2 / V8 14.6.202.34-node.28, host load up to 9.07, no quiet lock; harness written by the audit and NOT reviewed here (law 11: its numbers are leads until a reviewed probe re-runs them); x86 unmeasured (law 7).
+     Trigger unchanged (the n-sweep release); the peel is judged with item 8.
 6. **R-13 Read-only LUT index for static arrays (added 2026-11-12, maintainer question "can a lut provide speed
    at the cost of storage, sweet spot?").** Evidence (REPORTED, another package, one CPU): LiteLogLogN
    RESEARCH 17.2 L1 -- a top-bits offset LUT (2^T + 1 Uint16 offsets on the key's top T bits) + branchless in
@@ -523,6 +546,13 @@ release, once the A/B result (P3-R1) is known. Each item names its trigger and w
    queries, rebuild on write (R-7: a maintained LUT belongs in its owner). A new stateful API (build + query),
    not a per-call kernel. Trigger: a P2 site with a static large array (LogN WaveletTree / MergeSortTree) whose
    own A/B shows search time matters. A research burst (spike ladder; kill rule: no FASTER cell at <= 2% storage).
+   - Audit neon 2026-11-22 (PRELIMINARY; RESEARCH-DEEP (neon, 2026-11-22) section 4): lut1024 (4 KB
+     Int32Array(1025) exact monotone bucket table + branchless fallback) ran 0.482 / 0.416 / 0.514 / 0.514 / 0.742
+     of the 103 B kernel on uniform keys at n = 256 / 4,096 / 65,659 / 524,411 / 4,194,427, and 0.488..0.565
+     (quad data) up to 524,411; on 1e8-range exponential keys 1.217 at n = 256 (SLOWER), then 1.038 / 0.975 /
+     1.010 WITHIN at 4,096 / 65,659 / 4,194,427 (the 524,411 exp cell was VOID). The skew limit above is thus
+     measured: a loss at tiny n, parity beyond. Not a per-call kernel; the trigger and the kill rule stand.
+     Provenance: PRELIMINARY: one Apple M4 Pro (darwin arm64), node v26.8.2 / V8 14.6.202.34-node.28, host load up to 9.07, no quiet lock; harness written by the audit and NOT reviewed here (law 11: its numbers are leads until a reviewed probe re-runs them); x86 unmeasured (law 7).
 7. **Parked items with reopen triggers.** Selector (A5): only if adoption shows callers picking the wrong
    kernel. Eytzinger (R-5 / A6): a research burst at n >= 1e5, and compare with R-13 (both attack the cache
    misses). Interpolation search (R-12): optional, near-uniform keys (MotionPath LUTs, timestamps).
@@ -545,6 +575,16 @@ release, once the A/B result (P3-R1) is known. Each item names its trigger and w
      iteration count plus a predicated last step replaces padding. The S+ tree (static B-tree, B = 16 = one line)
      reaches ~15x, but its in-node search is AVX2 SIMD; scalar JS would keep only the layout (unmeasured). For
      Float64 a line holds 8 keys (64 B, x86) or 16 (128 B, Apple), so "levels per prefetch" differs per host.
+   - Audit neon 2026-11-22 (PRELIMINARY; RESEARCH-DEEP (neon, 2026-11-22) sections 3.2, 4, 5.4): Eytzinger (87 B
+     eyt_pos, 90 B eyt_rank, both Maglev-inlinable) vs the 103 B kernel: eyt_pos 0.757 at n = 256, 0.768 at 4,096,
+     0.455 at 524,288, 0.599 at 524,411, 0.731 / 0.782 at 2,097,152 / 2,097,275; eyt_rank 0.793 / 0.790 / 0.541 /
+     0.716; at 16 MB and above eyt_rank loses its edge (extra rank[pos] miss; cells 0.894* .. 1.209*, * = VOID by
+     A/A drift) while eyt_pos keeps winning (payload stored in Eytzinger order; needs a reordered copy, so it is a
+     companion, not a kernel). Interpolation (R-12): 1.22x..3.54x SLOWER at every cell (n = 256..4,194,427,
+     uniform / quad / exp); see item 13. branchy55 never beat the 103 B kernel up to 32 MB (2.83x slower at 256,
+     1.24x..1.44x at 32 MB). Early-exit binarySearchExact lost to lowerBoundBranchless + === by 1.21x..2.68x at
+     n = 16..65,659 at 0 / 50 / 100% hit rates. The reopen triggers above stand; none is met by this evidence.
+     Provenance: PRELIMINARY: one Apple M4 Pro (darwin arm64), node v26.8.2 / V8 14.6.202.34-node.28, host load up to 9.07, no quiet lock; harness written by the audit and NOT reviewed here (law 11: its numbers are leads until a reviewed probe re-runs them); x86 unmeasured (law 7).
 8. **R-14 Early-load "prefetch" in JS (added 2026-11-12, from (f)).** JS has no prefetch instruction, but an
    independent load of both next midpoints (or of t[16k] for Eytzinger), sunk into a value the result depends
    on trivially so V8 cannot drop it, may act as one: the CPU issues it while the compare resolves. Unknown:
@@ -561,8 +601,53 @@ release, once the A/B result (P3-R1) is known. Each item names its trigger and w
      problem (the peak of a unimodal function); on a sorted array its value here is only the independent-loads
      shape. For a unimodal integer function, a lower bound on "f(m) >= f(m + 1)" needs ~2 log2 n evaluations
      vs ternary's ~3.4 log2 n (and is plateau-safe only when f is strictly unimodal, as ternary is).
+   - Audit neon 2026-11-22 (PRELIMINARY; RESEARCH-DEEP (neon, 2026-11-22) sections 1, 3.2): both arms ran, with
+     zero extra memory and the sorted array unmodified. bl_kary4 (225 B, 3 independent loads) vs the 103 B kernel:
+     0.903 / 0.839 at n = 256 / 4,096, 0.882 / 0.964 at 65,536 / 65,659, 0.676 / 0.810 at 524,288 / 524,411,
+     0.697 / 0.808* at 2,097,152 / 2,097,275, 0.759 / 0.739 at 4,194,304 / 4,194,427 (* VOID by A/A drift).
+     bl_kary3 (199 B, 2 loads) 1.169 (SLOWER) at 256, 0.940 at 4,096, 0.686 at 65,536, 0.986 at 65,659, 0.542 /
+     0.677 at 524,288 / 524,411, 0.604 / 0.809 at 2,097,152 / 2,097,275 (the two 4,194,xxx cells VOID). Part of
+     the large-n win is the item 5 aliasing cliff, which kary3 sidesteps. The Shar power-of-two variant (bl5_shar,
+     193 B) is 0.862..0.902 in L1 (n = 4..4,096) but 1.277..1.479 SLOWER on non-pow2 n >= 64K: rejected as a
+     default. ALL of these (193..225 B) exceed Maglev's 100 B single-inline cap, so they would be dedicated
+     large-n entry points, not a kernel replacement (TurboFan single cap 460 B is fine). Next gate: x86 (ab-research.yml).
+     Provenance: PRELIMINARY: one Apple M4 Pro (darwin arm64), node v26.8.2 / V8 14.6.202.34-node.28, host load up to 9.07, no quiet lock; harness written by the audit and NOT reviewed here (law 11: its numbers are leads until a reviewed probe re-runs them); x86 unmeasured (law 7).
 9. **After the release.** MOVE (never delete) finished specs, `audit/`, `.handoff/frozen/` and the review
    overlays into `.handoff/archive/1.0.0/` (ORCHESTRATOR "STATE"); rotate HISTORY.md past ~50K chars.
+10. **The 99 B branchless kernel (bl1_99; audit neon 2026-11-22; PRELIMINARY; RESEARCH-DEEP (neon, 2026-11-22)
+    sections 1, 2).** Drops `let b = lo;`, keeps the exact `(0 - ((a[lo + h] < x) | 0)) & h` bitmask: 103 -> 99 B,
+    under Maglev's 100 B cap. Measured: Maglev (--no-turbofan) 16.0000 -> 0.0000 B/op on lowerBound F64 / F32 /
+    U32 / U16 / I32 and segmentF64 (15.9792 -> 0); Maglev speed 0.938 at n = 16 (F64), 0.995 at 256, 0.983 at
+    4,096; TurboFan WITHIN (0.982..1.047) at n = 1..65,659 on F64, and 0.990..1.005 on the five types at 256 /
+    4,096 and feeds-write 16 / 128. This meets LEDGER C7's reopen rule ("a < 100 B body that keeps an int32 mask
+    and is not SLOWER at any n") on arm64 PRELIMINARY ONLY. Reopening C7 needs (a) a reviewed strict
+    quiet-lock re-run here (law 11) AND (b) x86 (ab.yml / ab-research.yml; C7 and R-10 name an x86 run). A kernel
+    change is post-1.0: AB-G2 freezes the 1.0 kernel bytes (88e5b1c-10add825). Trigger: 1.0 on npm, then one
+    research burst (kernel + bytecode.test / expect.json / size-budget re-pin) on the hosted legs.
+    - Note, hintCompact (205 B, one tail call into the 99 B body): cumulative TurboFan footprint 434 -> 304 B
+      (today's lowerBoundHint* is 228 B + 2 x 103 B); in a 3-channel loop 2 of 3 calls inline instead of 1 of 3,
+      32 -> 16 B/op, at a cost of about 1 ns on a pure forward playhead (section 5.2). Rides with this item or
+      item 11; same gates.
+11. **segmentHint* / upperBoundHint* (audit neon 2026-11-22; PRELIMINARY; RESEARCH-DEEP (neon, 2026-11-22)
+    section 5.2).** NEW public surface: a research burst and a PROPOSAL first (ORCHESTRATOR "Research bursts"),
+    never a direct coder unit. Evidence: on a smooth 60 fps monotone playhead (8 frames per segment) segHintFast
+    (262 B) is 3.9x / 6.1x / 9.9x faster than segmentF64 at n = 256 / 4,096 / 65,659 (3.20 / 3.10 / 3.16 ns vs
+    12.49 / 19.12 / 31.42 ns, ratios 0.258 / 0.164 / 0.101); on incoherent streams it is 1.38x..1.67x SLOWER, the
+    same coherence trade as C5. The audit counts the per-frame suite sites (Keyframe, MotionPath, Virtual,
+    Scrollforge) as wanting segment / upperBound semantics, not lowerBound alone. The README:241 footgun (it
+    points a segment user at lowerBoundHintF64) is being fixed in words in this burst (BIS-neon-7); the new
+    functions are not. Trigger: 1.0 on npm and a P2 consumer (item 1) whose own A/B shows the lookup matters.
+12. **The 96 B integer nearest (U32 / U16 / I32; audit neon 2026-11-22; PRELIMINARY; RESEARCH-DEEP (neon,
+    2026-11-22) section 5.3).** Claim: for 32-bit integers |p + q| <= 2^33 - 2 < 2^53, so (a[i - 1] + a[i]) * 0.5
+    is exact in a double and the TwoSum body is dead; F32 / F64 keep TwoSum. Evidence (the audit's): 181,190 / 181,190
+    checks against the live Bisect.js and the BigInt oracle, 0 mismatches; bytecode 189 -> 96 B, cumulative
+    TurboFan footprint 292 -> 195 B; TurboFan speed 1.026..1.045 WITHIN at n = 256 / 4,096. Needs: an integer /
+    float split in scripts/gen.mjs, an independent oracle (not the audit's) with mutants (mutants.json split),
+    expect.json / size-budget re-pin, c8 100%. Post-1.0 (AB-G2 and the generated bodies). Trigger: 1.0 on npm.
+13. **Closing R-12 (interpolation) on arm64.** Evidence (PRELIMINARY; RESEARCH-DEEP (neon, 2026-11-22) section 4):
+    interp2_bl / interp_full lost 1.22x..3.54x at every cell, n = 256..4,194,427, uniform / quad / exp (the
+    3.0x..3.5x cells at 4,194,427 are marked VOID by A/A drift; the clean cells span 1.22x..1.68x). Closing needs a
+    reviewed probe re-run (law 11); x86 is optional per the audit. Until then R-12 stays parked under item 7.
 
 ## 9. LiteUtils integration (planning only, 2026-11-10)
 

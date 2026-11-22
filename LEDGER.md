@@ -558,7 +558,30 @@ on these kernels. No single green gate authorises a release.
   FAIL whose fails line reads `settle drained=true` and no violation (a channel this entry did not see), or an
   undrained lane after the 2000 ms re-settle on an idle host. Open (not ruled): CONTROL-retain's flag reads heap
   samples taken before settle, so an unflagged + undrained retain control reads UNDRAINED (NO VERDICT) per the spec
-  where FAIL would be stronger; fail-closed either way (SPEC-2b.md OPEN).
+  where FAIL would be stronger; fail-closed either way. RULED 2026-11-22: NF-R3 "Keep NO VERDICT (as ruled)" (ROADMAP 5i).
+
+### B17. Four gates failed open on forged or out-of-domain input; one oracle had no infinity *(FOUND 2026-11-22, independent audit "neon"; CONFIRMED 8 / 8 on cf1b677; RULED NEON-R1..R3; FIXED 2026-11-23 in the working tree, batches A / B / C / E APPROVED; docs batch D pending)*
+- **What happened:** (neon-2) `bench/ab-gate.mjs --verdict-file` read exit 0 VERDICT PASS on both pinned R4 fixtures for a
+  negative bop cell, NaN aa.q1 / aa.q3 / slow.q3, HEADER NQ2=1 minWindow=1, and a dropped or doubled PROV start line -- the
+  ab.yml release verdict. (neon-3) the alloc gate's emptyCheck had no lower bound (judge() null for -0.5 / -5). (neon-4)
+  lu.mjs never checked the package name (env and installed paths), took a parent repo's commit for a non-git subdir, and its
+  CLI guard skipped the CLI through a symlinked path (exit 0, empty stdout; ci.yml:128 relies on exit 2). (neon-1) the
+  oracle had no +-Infinity: the mutant runner SURVIVED nearestF32 / F64 "d < u" flipped (exact +Infinity match) and the F64
+  AU-R1a guard removed; F32's flip passed every correctness test. (neon-8) gen --check accepted trailing text after END;
+  assertRange accepted {length:'5'} and lo = hi = 1e20 on {length: Infinity}.
+- **Root cause:** each check bounded one side (an upper bound with no floor, a med with no quartiles, PROV end with no PROV
+  start, a version with no name, a HEAD read with no top-level check); and an oracle whose value domain stopped short of the
+  contract's (finite only). The first control written for a floor (F37 at -99) sat far from it and let a weakened floor live
+  (review A r1), the B5 shape again.
+- **Evidence:** .handoff/audit-neon/CONFIRMATION.md + evidence/confirm-head.log (real verdict paths), review-{A,B,C,E}/
+  VERDICT-r*.md, evidence/{A,B,C,E}-*.log. Audit: audit/2026-11-22/neon/REVIEW.md (gitignored).
+- **Law:** 9 (every conjunct gets a control at its bound, failing on it alone). Equivalent mutants recorded, not gaps:
+  au-r1a on F32 and the integer types, inf-gt on the integer types; assertRange's typeof n / safe lo / safe hi conjuncts
+  (kept: ruled text, NEON-R3).
+- **Gate:** ab-gate selftest F37-F45; test/lu.test.mjs name / top-level / symlink-CLI / git-env rows; alloc.test.mjs neon-3
+  judge control + the fracnanhint lane (NEON-R1); mutants.json 106 rows (nearest.inf-gt.F64 / F32, nearest.au-r1a.F64);
+  oracle INF_GROUPS; test/gen.test.mjs END rows; test/Bisect.boundary.test.mjs assertRange rows. Reopens with: a verdict
+  field read without both bounds; an oracle phase whose values miss part of the documented domain.
 
 ---
 
@@ -769,6 +792,16 @@ on these kernels. No single green gate authorises a release.
   run's macOS log and reads PASS). Reopens with: a gated lane reading another word on a release dispatch; a runner CPU
   family not seen here.
 
+### C12. Two non-Smi arguments across a non-inlined call box 2 x 16 B *(MEASURED 2026-11-22, audit neon confirmation; RULED NEON-R1 "Amend + gate (Recommended)"; refines C2 / C9)*
+- **What happened:** the shipped AU-R3 sentence said "one 16 B HeapNumber per call". Under the pinned flags
+  (--no-turbo-inlining --no-maglev-inlining, semi-space 4, single-threaded GC) lowerBoundHintF64(fractional x, NaN h, both
+  read from Float64Arrays) and lowerBoundBranchlessF64(-0 lo read, fractional x) read 32 B/op; one non-Smi argument 16;
+  Smi only 0 (2 runs, node v26.8.2, M4 Pro, load1 2.31, untimed counts; .handoff/audit-neon/evidence/confirm-head.log).
+  Batch B's fracnanhint lane reads 32.00 B/op in every run-B window on all five types (evidence/B-gates.log).
+- **Reason:** the CALLER boxes each non-Smi number argument it passes across a real call (C9); the count is per argument.
+- **Law:** 8. **Gate:** gates:local fracnanhint lane, run B [28, 36] B/op, run A the floor. Reopens with: a V8 that passes
+  doubles unboxed across calls (the lane then reads the floor and fails low).
+
 ---
 
 ## D. Process lessons
@@ -805,6 +838,14 @@ on these kernels. No single green gate authorises a release.
   text is checked by a command before the question is asked.
 - **Gate:** `.handoff/p3/ci-check.mjs` PREREQ (lockfile tracked by git, v3, platform binaries present); exits 1 until
   the lockfile is committed. Not in `npm test` (it reads git state).
+
+### D4. The confirmation script's argv filter dropped `--test` *(FOUND 2026-11-23, audit neon batch C coder)*
+- **What happened:** .handoff/audit-neon/confirm.mjs built `['--test', ...files].filter(existsSync)`; '--test' is not a
+  file, so `node file1 file2 ...` ran only the oracle file and its "oracle + boundary + nearest-exact exit 0" line overstated
+  neon-1 (the two F64 mutants are killed by nearest-exact and boundary). The batch C coder caught it re-running the check.
+- **Law:** 11 (a probe harness is reviewed before its numbers count) applies to the orchestrator's own confirmation
+  scripts. Lesson: a confirmation row prints the exact argv it ran and the test count it saw.
+- **Evidence:** CONFIRMATION.md neon-1 CORRECTION; evidence/C-revert-before.log. **Gate:** none (process).
 
 ## Not yet covered
 
