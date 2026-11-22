@@ -374,6 +374,13 @@ C-late3's first HOSTED space-used-paired read: both
 legs `--json` signal "space-used-paired", late3 w0..5 0.00 0.00 0.32 16.00 16.00 16.00, `gate --max 1 (peak B/op):
 FAIL` as planned; C-late3-decide 58 planted pairs, 0 wrong.
 
+Also recorded 2026-11-22: UNIT 2b (NF-R1) APPROVED in the working tree (review r2) -- test/torture.mjs re-settles with
+{ maxWaitMs: 2000 } when the GC observer is undrained; a lane still undrained but otherwise ok reads UNDRAINED and the run NO VERDICT
+(exit 2), a FAIL still wins (exit 1); controls (f1)..(f5); npm test 266 / 266. Release gate (NF-R2): after the
+maintainer commits and pushes 2b, ONE green scheduled nightly.yml run on that commit, all legs (quote its id), then
+step 3 (ab.yml) and step 4 (/release 1.0.0). Also ci.yml run 45064201750 on 0192872 (2a): all 11 jobs green (gates legs
+20:03-20:07Z ubuntu, 20:03-20:08Z macos).
+
 ## 6. Verification plan, by tier
 
 - **DETERMINISTIC (`npm test`):**

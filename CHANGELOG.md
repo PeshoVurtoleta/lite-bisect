@@ -50,6 +50,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`--expose-gc --no-concurrent-recompilation --single-threaded-gc --min-semi-space-size=1 --max-semi-space-size=1`);
   it prints NO VERDICT and exits 2 without the two semi-space flags, and NO VERDICT without --single-threaded-gc
   (concurrent sweeping made the retained term flaky under load); a must-fail 16 B/op plant exits 1.
+  A lane whose GC observer is still undrained after a 2000 ms re-settle (lite-gc-profiler settle()'s 200 ms default
+  timed out, by elimination; a host stall inferred; nightly 45024298534) but is otherwise ok, or a control neither
+  flagged nor drained, reads UNDRAINED and the run NO VERDICT (exit 2), never a pass; a FAIL still
+  wins (exit 1); a test-only LITE_BISECT_TORTURE_STALL_MS hook drives the must-fail controls.
 - R-LLMS-SNIPPETS: the `llms.txt` usage results are checked `// -> n` lines; the docs test runs the
   `llms.txt` js fences and fails on a bare `// <number>` result comment in README / `llms.txt`.
 

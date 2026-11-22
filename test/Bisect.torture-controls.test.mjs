@@ -14,8 +14,18 @@
 //       with the GC NO VERDICT line, before the build import (P3-R10, LEDGER B11).
 //   (d) LITE_BISECT_TORTURE_LEAK=1 -> exit 1.
 //   (e) a failing assertPlantLane message carries the child's GATE line and stderr (synthetic child, no spawn).
-// A failing (a)/(b) assertion prints the child's GATE line and its stderr fails lines (CI shows nothing else).
-// Spawns that expect a verdict ((a), (b), (d)) pass npm run torture's flags: TIER, GC and PIN.
+//   (f1) LITE_BISECT_TORTURE_STALL_MS=300 (a stall past settle()'s 200 ms default, inside the 2000 ms re-settle;
+//       NF-R1), clean build -> exit 0, LANE lowerBoundHintI32 ' ok', GATE ' | ok'.
+//   (f2) STALL_MS=2300 (past both budgets), clean build -> exit 2 with the one NO VERDICT line naming
+//       lowerBoundHintI32, that LANE ' UNDRAINED', every other LANE ' ok', GATE ' | NO VERDICT'.
+//   (f3) STALL_MS=2300 + the (a) box plant -> exit 1 (FAIL wins over NO VERDICT): the planted lane FAIL,
+//       lowerBoundHintI32 UNDRAINED, GATE ' | FAIL'.
+//   (f4) STALL_MS '0', '300ms', '100000', '' -> exit 2 with the hook refusal line, before the build import, stdout ''.
+//   (f5) STALL_MS=2300 + a retaining plant IN lowerBoundHintI32 (the stalled lane itself) -> exit 1: an undrained
+//       lane that also fails a channel is FAIL (evidence wins); its LANE ' FAIL', the stderr settle drained=false
+//       line, GATE ' | FAIL', no NO VERDICT line.
+// A failing (a)/(b)/(f*) assertion prints the child's GATE line and its stderr fails lines (CI shows nothing else).
+// Spawns ((a), (b), (d), (f1)..(f5)) pass npm run torture's flags: TIER, GC and PIN.
 // The clean run is `npm run torture` (verify), not repeated here. Plants live in a mktemp dir, removed at
 // exit. NODE_V8_COVERAGE is dropped from the child env (c8 must not instrument the torture child).
 
@@ -39,6 +49,10 @@ const TIER = '--no-concurrent-recompilation';
 const GC = '--single-threaded-gc';
 const REFUSAL = 'torture: NO VERDICT -- run with --min-semi-space-size=1 --max-semi-space-size=1';
 const GC_REFUSAL = 'torture: NO VERDICT -- run with --single-threaded-gc';
+const STALL_REFUSAL = 'torture: NO VERDICT -- LITE_BISECT_TORTURE_STALL_MS must be 1..99999';
+const UNDRAINED_PREFIX = 'torture: NO VERDICT -- GC observer not drained';
+const STALL_LANE = 'lowerBoundHintI32';   // the lane the torture's STALL_MS hook stalls (its CI lane)
+const FLAGS = ['--expose-gc', TIER, GC, ...PIN];
 const TIMEOUT_MS = 120000;
 const ANCHOR = 'export function upperBoundBranchyF64(a, lo, hi, x) {\n';
 const PLANT_LANE = 'upperBoundBranchyF64';
@@ -47,11 +61,11 @@ const N_LANES = Object.keys(KERNELS).length * TYPE_NAMES.length;   // the oracle
 const TMP = mkdtempSync(join(tmpdir(), 'lite-bisect-torture-ctl-'));
 after(() => { rmSync(TMP, { recursive: true, force: true }); });
 
-function plant(name, line) {
+function plant(name, line, anchor = ANCHOR) {
     const src = readFileSync(BUILD, 'utf8');
-    const n = src.split(ANCHOR).length - 1;
-    if (n !== 1) assert.fail('NO VERDICT: plant anchor found ' + n + ' times in Bisect.js (want 1): ' + JSON.stringify(ANCHOR));
-    const out = src.replace(ANCHOR, () => ANCHOR + '    ' + line + '\n');
+    const n = src.split(anchor).length - 1;
+    if (n !== 1) assert.fail('NO VERDICT: plant anchor found ' + n + ' times in Bisect.js (want 1): ' + JSON.stringify(anchor));
+    const out = src.replace(anchor, () => anchor + '    ' + line + '\n');
     assert.equal(out.length, src.length + line.length + 5);
     const p = join(TMP, name + '.js');
     writeFileSync(p, out);
@@ -63,6 +77,7 @@ function torture(flags, env = {}) {
     delete e.NODE_V8_COVERAGE;
     if (!('LITE_BISECT_TORTURE_MODULE' in env)) delete e.LITE_BISECT_TORTURE_MODULE;
     if (!('LITE_BISECT_TORTURE_LEAK' in env)) delete e.LITE_BISECT_TORTURE_LEAK;
+    if (!('LITE_BISECT_TORTURE_STALL_MS' in env)) delete e.LITE_BISECT_TORTURE_STALL_MS;
     const r = spawnSync(process.execPath, [...flags, TORTURE], { env: e, encoding: 'utf8', timeout: TIMEOUT_MS });
     if (r.error || r.signal !== null) assert.fail('NO VERDICT: torture child ' + (r.signal || r.error.message));
     return r;
@@ -199,4 +214,72 @@ test('(e) control: a failing assertPlantLane message carries the child\'s stderr
             return true;
         });
     }
+});
+
+// The LANE lines of a child, by name -> line; every one of the N_LANES roster lanes must be there.
+function laneMap(r, diag) {
+    const lanes = r.stdout.split('\n').filter((l) => l.startsWith('LANE '));
+    assert.equal(lanes.length, N_LANES, 'LANE lines: ' + lanes.length + diag);
+    return new Map(lanes.map((l) => [l.split(' ')[1], l]));
+}
+
+test('(f1) STALL_MS=300 (past settle 200 ms, inside the 2000 ms re-settle), clean build -> torture exit 0, lane drained', () => {
+    const r = torture(FLAGS, { LITE_BISECT_TORTURE_STALL_MS: '300' });
+    const diag = childDiag(r);
+    console.log('# (f1) exit ' + r.status + ' | ' + r.stdout.split('\n').filter((l) => l.startsWith('LANE ' + STALL_LANE + ' ') || l.startsWith('GATE')).join(' | '));
+    assert.equal(r.status, 0, 'exit ' + r.status + diag);
+    const lane = laneMap(r, diag).get(STALL_LANE);
+    assert.ok(lane && lane.endsWith(' ok'), 'LANE ' + STALL_LANE + ' not ok: ' + lane + diag);
+    assert.match(r.stdout, /^GATE .* \| ok$/m, 'no "GATE ... | ok" line' + diag);
+});
+
+test('(f2) STALL_MS=2300 (past both settle budgets), clean build -> torture exit 2 NO VERDICT, lane UNDRAINED', () => {
+    const r = torture(FLAGS, { LITE_BISECT_TORTURE_STALL_MS: '2300' });
+    const diag = childDiag(r);
+    console.log('# (f2) exit ' + r.status + ' | ' + r.stdout.split('\n').filter((l) => l.startsWith('LANE ' + STALL_LANE + ' ') || l.startsWith('GATE')).join(' | '));
+    assert.equal(r.status, 2, 'exit ' + r.status + diag);
+    const nv = r.stderr.split('\n').filter((l) => l.startsWith(UNDRAINED_PREFIX));
+    assert.deepEqual(nv, [UNDRAINED_PREFIX + ' (lanes: ' + STALL_LANE + ')'], 'NO VERDICT line' + diag);
+    const lanes = laneMap(r, diag);
+    assert.ok(lanes.get(STALL_LANE) && lanes.get(STALL_LANE).endsWith(' UNDRAINED'), 'LANE ' + STALL_LANE + ': ' + lanes.get(STALL_LANE) + diag);
+    const bad = [...lanes].filter(([n, l]) => n !== STALL_LANE && !l.endsWith(' ok')).map(([, l]) => l);
+    assert.deepEqual(bad, [], 'other lanes not ok' + diag);
+    assert.match(r.stdout, /^GATE .* \| NO VERDICT$/m, 'no "GATE ... | NO VERDICT" line' + diag);
+});
+
+test('(f3) STALL_MS=2300 + the (a) box plant -> torture exit 1 (FAIL wins over NO VERDICT)', () => {
+    const r = torture(FLAGS, { LITE_BISECT_TORTURE_STALL_MS: '2300', LITE_BISECT_TORTURE_MODULE: plant('box-stall', 'globalThis.__bisectBox = x + 0.5;') });
+    const diag = childDiag(r);
+    console.log('# (f3) exit ' + r.status + ' | ' + r.stdout.split('\n').filter((l) => l.startsWith('LANE ' + PLANT_LANE + ' ') || l.startsWith('LANE ' + STALL_LANE + ' ') || l.startsWith('GATE')).join(' | '));
+    assert.equal(r.status, 1, 'exit ' + r.status + diag);
+    const lanes = laneMap(r, diag);
+    assert.ok(lanes.get(PLANT_LANE) && lanes.get(PLANT_LANE).endsWith(' FAIL'), 'LANE ' + PLANT_LANE + ': ' + lanes.get(PLANT_LANE) + diag);
+    assert.ok(lanes.get(STALL_LANE) && lanes.get(STALL_LANE).endsWith(' UNDRAINED'), 'LANE ' + STALL_LANE + ': ' + lanes.get(STALL_LANE) + diag);
+    assert.match(r.stdout, /^GATE .* \| FAIL$/m, 'no "GATE ... | FAIL" line' + diag);
+    assert.ok(!r.stderr.includes(UNDRAINED_PREFIX), 'a FAIL run printed the NO VERDICT line' + diag);
+});
+
+test('(f4) STALL_MS outside 1..99999 -> torture exit 2 with the hook refusal, before the build import and any lane', () => {
+    const throwing = join(TMP, 'throws-at-import-stall.js');
+    writeFileSync(throwing, "throw new Error('torture imported the build before the STALL_MS check');\n");
+    for (const v of ['0', '300ms', '100000', '']) {
+        const r = torture(FLAGS, { LITE_BISECT_TORTURE_STALL_MS: v, LITE_BISECT_TORTURE_MODULE: throwing });
+        console.log('# (f4) STALL_MS=' + JSON.stringify(v) + ' -> exit ' + r.status);
+        assert.equal(r.status, 2, 'STALL_MS=' + JSON.stringify(v) + ' exit ' + r.status + childDiag(r));
+        assert.equal(r.stderr.trim(), STALL_REFUSAL, 'STALL_MS=' + JSON.stringify(v) + childDiag(r));
+        assert.equal(r.stdout, '', 'STALL_MS=' + JSON.stringify(v) + childDiag(r));
+    }
+});
+
+test('(f5) STALL_MS=2300 + a retaining plant in lowerBoundHintI32 -> torture exit 1 (the undrained lane FAILs, not UNDRAINED)', () => {
+    const anchor = 'export function lowerBoundHintI32(a, lo, hi, x, h) {\n';
+    const r = torture(FLAGS, { LITE_BISECT_TORTURE_STALL_MS: '2300', LITE_BISECT_TORTURE_MODULE: plant('keep-stall', '(globalThis.__bisectKeep || (globalThis.__bisectKeep = [])).push({ x });', anchor) });
+    const diag = childDiag(r);
+    console.log('# (f5) exit ' + r.status + ' | ' + r.stdout.split('\n').filter((l) => l.startsWith('LANE ' + STALL_LANE + ' ') || l.startsWith('GATE')).join(' | '));
+    assert.equal(r.status, 1, 'exit ' + r.status + diag);
+    const lane = laneMap(r, diag).get(STALL_LANE);
+    assert.ok(lane && lane.endsWith(' FAIL'), 'LANE ' + STALL_LANE + ' not FAIL: ' + lane + diag);
+    assert.match(r.stderr, /^ {2}lane lowerBoundHintI32 .* settle drained=false waited=/m, 'no settle drained=false fails line' + diag);
+    assert.match(r.stdout, /^GATE .* \| FAIL$/m, 'no "GATE ... | FAIL" line' + diag);
+    assert.ok(!r.stderr.includes(UNDRAINED_PREFIX), 'a FAIL run printed the NO VERDICT line' + diag);
 });

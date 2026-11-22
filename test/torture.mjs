@@ -9,7 +9,8 @@
 // would override the pin and let a 16 B/op plant read minor 0). The refusal also covers one-dash spellings and
 // --minor-ms (the AU-R5b class-3 refusal: its young GCs are a kind the profiler does not count). Pinned to 1 MB, a 16 B/op box over a
 // 200,000-op lane (3.2 MB) must scavenge, so steady maxMinor 0 sees it; unpinned, new space grows and a
-// 16 B/op plant passes (cross-opus, audit 2026-11-11). Exit codes: 0 ok, 1 FAIL, 2 NO VERDICT.
+// 16 B/op plant passes (cross-opus, audit 2026-11-11). Exit codes: 0 ok, 1 FAIL, 2 NO VERDICT (a refusal, or a
+// lane / control UNDRAINED with no FAIL anywhere -- see Phase 2; FAIL wins over NO VERDICT; NO VERDICT is never a pass).
 // GC pin (P3-R10, LEDGER B11), checked second, also before the import: the run REFUSES with
 // `torture: NO VERDICT -- run with --single-threaded-gc` (exit 2) unless the LAST execArgv entry spelling that flag
 // (one or two dashes, '-' or '_', a no / no- / no_ prefix, any =value) is exactly --single-threaded-gc. Without it
@@ -30,6 +31,11 @@
 // no phase-1 check fails the count).
 // Control: LITE_BISECT_TORTURE_LEAK=1 keeps every root (and array) alive: size() reads
 // >= 4000 and the run exits 1.
+// Control (test-only, NF-R1): LITE_BISECT_TORTURE_STALL_MS=<ms> stalls the main thread for <ms> (a busy-wait on
+// performance.now() in a setTimeout(0) scheduled immediately before EVERY settle() call of lane lowerBoundHintI32
+// only, in its post phase), so settle's first tick runs after the stall. Unset = no effect. Set, it must match
+// /^[1-9][0-9]{0,4}$/ or the run refuses before the build import: `torture: NO VERDICT --
+// LITE_BISECT_TORTURE_STALL_MS must be 1..99999` and exit 2. 300 -> re-settled, exit 0; 2300 -> UNDRAINED, exit 2.
 //
 // Phase 2, retention per op (@zakkster/lite-gc-profiler): one 200,000-op lane per kernel family
 // x type, each a LITERAL per-type call site (LEDGER C3: one shared call site fed several array
@@ -38,14 +44,18 @@
 // a family x type with no lane (or two) fails. Per lane, in its own profiler window: a settled
 // heap + arrayBuffers sample (two forced GCs) before and after, the steady loop in phase
 // 'steady', the GC observer drained with settle() before summary() (GC entries arrive
-// asynchronously). Gate per lane (laneOk): steady maxMajor 0 AND maxMinor 0 (AU-R5: any scavenge in the
+// asynchronously); a settle() that times out (drained:false, lite-gc-profiler's 200 ms default) is re-run once
+// with { maxWaitMs: 2000 } (NF-R1), and summary() / checkNoGc read every count channel after the final settle.
+// Gate per lane (laneOk): steady maxMajor 0 AND maxMinor 0 (AU-R5: any scavenge in the
 // steady loop is an allocation per op), arrayBuffers growth 0, AND
 // -1.0 < retained heap < 1.0 B/op (P1-R10, LEDGER B4) -- retained = settled heapUsed after minus
 // before, / 200,000. That term is RETENTION, not allocation: a short-lived box dies before the
 // settled sample and reads ~0 there; under the pin, steady maxMinor 0 is the term that sees it
 // (the B/op number per lane is U6's lanes). Resolution: one 1 MB semi-space over 200,000 ops means the steady
 // minor check only sees allocation of roughly >= 5 B/op; the per-op bar stays the U6 alloc gate's job.
-// Controls, each MUST be flagged or the run FAILS:
+// A lane that passes every channel but whose observer is still not drained after the re-settle is UNDRAINED (its
+// window is unverified): not ok, not FAIL. An undrained lane that also fails a channel is FAIL (evidence wins).
+// Controls, each MUST be flagged or the run FAILS (a control neither flagged nor drained is UNDRAINED):
 //   CONTROL-alloc retains a 128 B Float64Array per op and runs one full GC mid-window: flagged
 //   on BOTH GC channels (an arrayBuffers violation and a steady major).
 //   CONTROL-retain retains one small on-heap object ({ lo, hi }) per op. It is the last row of
@@ -54,8 +64,11 @@
 //
 // LITE_BISECT_TORTURE_MODULE=<abs path> runs the gate against another build (revert checks).
 //
-// Output: one LANE line per lane, a CONTROL line, then
-//   GATE leak=size <n>/16 findings=<n> warnings=<n> | gc major=<n> minor=<n> maxMs=<n> | retained=<n> B/op | ok|FAIL
+// Output: one LANE line per lane (its last word ok|FAIL|UNDRAINED), a CONTROL line, then
+//   GATE leak=size <n>/16 findings=<n> warnings=<n> | gc major=<n> minor=<n> maxMs=<n> | retained=<n> B/op | ok|FAIL|NO VERDICT
+// Run verdict: FAIL (exit 1) if any lane / control / phase-1 check fails; else NO VERDICT (exit 2) if any lane or
+// control is UNDRAINED, with the one stderr line `torture: NO VERDICT -- GC observer not drained (lanes: <names>)`;
+// else ok (exit 0).
 // (retained = the max over the kernel lanes; the controls are not in it).
 
 import { GcProfiler, checkNoGc } from '@zakkster/lite-gc-profiler';
@@ -84,6 +97,14 @@ if (SGC.length === 0 || SGC[SGC.length - 1] !== '--single-threaded-gc') {
     console.error('torture: NO VERDICT -- run with --single-threaded-gc');
     process.exit(2);
 }
+// NF-R1 test-only stall hook: validated before the build import (fail closed; unset = 0 = no stall).
+const STALL_RAW = process.env.LITE_BISECT_TORTURE_STALL_MS;
+if (STALL_RAW !== undefined && !/^[1-9][0-9]{0,4}$/.test(STALL_RAW)) {
+    console.error('torture: NO VERDICT -- LITE_BISECT_TORTURE_STALL_MS must be 1..99999');
+    process.exit(2);
+}
+const STALL_MS = STALL_RAW === undefined ? 0 : Number(STALL_RAW);
+const STALL_LANE = 'lowerBoundHintI32';
 
 const MOD = process.env.LITE_BISECT_TORTURE_MODULE
     ? pathToFileURL(process.env.LITE_BISECT_TORTURE_MODULE).href
@@ -292,8 +313,12 @@ const RETAIN = ['CONTROL-retain', (i) => {
 
 function drive(fn, n) { for (let i = 0; i < n; i++) fn(i); }
 
-// One lane in its own profiler window. Returns { s, report, st, bpo } (st: the settle() result, print-only).
-async function measureLane(fn) {
+// The STALL_MS hook body: a main-thread busy-wait, run from a setTimeout(0) queued just before a settle() call.
+function stallMain() { const t0 = performance.now(); while (performance.now() - t0 < STALL_MS) { /* stall */ } }
+
+// One lane in its own profiler window. Returns { s, report, st, bpo, drained } (st: the final settle() result;
+// drained: st.drained === true after the re-settle). stall: queue the STALL_MS hook before every settle() call.
+async function measureLane(fn, stall) {
     drive(fn, WARM);
     const gc = new GcProfiler(1024).start();
     gc.phase('pre');
@@ -306,15 +331,16 @@ async function measureLane(fn) {
     gc.forceSettle();
     const m1 = process.memoryUsage();
     gc.sampleHeap(performance.now(), m1.heapUsed, m1);
-    const st = await gc.settle();
+    if (stall === true) setTimeout(stallMain, 0);
+    let st = await gc.settle();
+    if (!st || st.drained === false) { if (stall === true) setTimeout(stallMain, 0); st = await gc.settle({ maxWaitMs: 2000 }); }
     const s = gc.summary();
     gc.stop();
     const report = checkNoGc(s, { maxArrayBuffersGrowth: 0, phases: { steady: { maxMajor: 0, maxMinor: 0 } } });
-    if (!st || st.drained === false) report.ok = false;
-    return { s, report, st, bpo: (m1.heapUsed - m0.heapUsed) / HOT };
+    return { s, report, st, bpo: (m1.heapUsed - m0.heapUsed) / HOT, drained: !!st && st.drained === true };
 }
 
-// The GC channels of one lane: steady major 0, arrayBuffers growth 0, settled, observer drained.
+// The GC channels of one lane: steady major 0, arrayBuffers growth 0, settled (observer drain is judged apart: UNDRAINED).
 function gcPass(m) { return m.report.ok && m.report.verdict === 'pass' && m.s.arrayBuffers.settled === true; }
 // THE lane verdict: the GC channels AND the retained gate (P1-R10): -1.0 < retained < 1.0 B/op.
 // A NaN fails both compares; the -1.0 floor fails a window that freed > 200 KB of older heap
@@ -324,21 +350,28 @@ function laneOk(gcOk, bpo) { return gcOk && bpo < 1.0 && bpo > -1.0; }
 // The retain control runs through the SAME loop and the same verdict line as the kernel lanes
 // (mustTrip = true: its GC channels are taken as passing, so only the retained gate can trip
 // it). A lane verdict that drops the retained term leaves the control un-flagged: the run FAILS.
-let sumMajor = 0, sumMinor = 0, maxMs = 0, maxBpo = -Infinity, minBpo = Infinity, lanesOk = 0;
-let retFlagged = false;
+// Per lane (NF-R1): FAIL = !laneOk (evidence wins, drained or not); else UNDRAINED = observer not drained after the
+// re-settle (not ok, not FAIL); else ok. A control neither flagged nor drained is UNDRAINED, not "gate open".
+let sumMajor = 0, sumMinor = 0, maxMs = 0, maxBpo = -Infinity, minBpo = Infinity, lanesOk = 0, lanesUndrained = 0;
+let retFlagged = false, retUndrained = false;
+const undrained = [];
 for (const [name, fn, mustTrip] of LANES.concat([[RETAIN[0], RETAIN[1], true]])) {
-    const m = await measureLane(fn);
-    const { s, report, st, bpo } = m;
+    const m = await measureLane(fn, STALL_MS > 0 && name === STALL_LANE);
+    const { s, report, st, bpo, drained } = m;
     const sg = s.phases.steady.gc;
     const ok = laneOk(mustTrip === true || gcPass(m), bpo);
     if (mustTrip === true) {
         retFlagged = !ok && bpo >= 1.0;   // the ceiling tripped it, never the floor; NaN fails
+        retUndrained = !retFlagged && !drained;
         const retMetrics = report.violations.map((v) => v.metric).join(',');
         console.log('CONTROL retain lane retained=' + bpo.toFixed(3) + ' B/op major=' + sg.major +
             ' minor=' + sg.minor + ' abGrowth=' + s.arrayBuffers.growthBytes +
             ' gcChannels=' + (gcPass(m) ? 'pass' : 'flagged(' + retMetrics + ')') + ' ' +
-            (retFlagged ? 'flagged by retained (expected)' : 'NOT FLAGGED by retained: the gate is open'));
-        if (!retFlagged) fails.push('control retain lane not flagged by the retained gate');
+            (retFlagged ? 'flagged by retained (expected)' : retUndrained
+                ? 'NOT FLAGGED by retained, observer not drained: UNDRAINED'
+                : 'NOT FLAGGED by retained: the gate is open'));
+        if (retUndrained) undrained.push(name);
+        else if (!retFlagged) fails.push('control retain lane not flagged by the retained gate');
         retainSink.length = 0;
         continue;
     }
@@ -346,15 +379,17 @@ for (const [name, fn, mustTrip] of LANES.concat([[RETAIN[0], RETAIN[1], true]]))
     if (sg.maxMs > maxMs) maxMs = sg.maxMs;
     if (bpo > maxBpo) maxBpo = bpo;       // a NaN bpo fails its own lane in laneOk
     if (bpo < minBpo) minBpo = bpo;
-    if (ok) lanesOk++;
-    // Print-only: drained=false is the settle() timeout (lite-gc-profiler maxWaitMs 200); a missing st prints settle=none.
+    const word = !ok ? 'FAIL' : drained ? 'ok' : 'UNDRAINED';
+    if (word === 'ok') lanesOk++;
+    else if (word === 'UNDRAINED') { lanesUndrained++; undrained.push(name); }
+    // Print-only: drained=false is the 2000 ms re-settle's timeout too (NF-R1); a missing st prints settle=none.
     else fails.push('lane ' + name + ' verdict=' + report.verdict + ' retained=' + bpo.toFixed(3) + ' B/op ' +
         report.violations.map((v) => v.metric + '=' + v.actual).join(',') +
         (st ? ' settle drained=' + st.drained + ' waited=' +
             (typeof st.waited === 'number' ? st.waited.toFixed(1) : String(st.waited)) + 'ms' : ' settle=none'));
     console.log('LANE ' + name + ' major=' + sg.major + ' minor=' + sg.minor + ' abGrowth=' +
         s.arrayBuffers.growthBytes + ' settled=' + s.arrayBuffers.settled + ' retainedB/op=' + bpo.toFixed(3) +
-        ' ' + (ok ? 'ok' : 'FAIL'));
+        ' ' + word);
 }
 
 const ctl = await measureLane(CONTROL[1]);
@@ -362,15 +397,21 @@ const ctl = await measureLane(CONTROL[1]);
 const ctlMetrics = ctl.report.violations.map((v) => v.metric).join(',');
 const ctlFlagged = !ctl.report.ok && ctl.report.verdict === 'fail' && /arrayBuffers/.test(ctlMetrics) &&
     ctl.s.phases.steady.gc.major > 0 && /major/i.test(ctlMetrics);
+const ctlUndrained = !ctlFlagged && !ctl.drained;
 console.log('CONTROL alloc lane major=' + ctl.s.phases.steady.gc.major + ' minor=' + ctl.s.phases.steady.gc.minor +
     ' abGrowth=' + ctl.s.arrayBuffers.growthBytes + ' verdict=' + ctl.report.verdict + ' violations=' + ctlMetrics + ' ' +
-    (ctlFlagged ? 'flagged (expected)' : 'NOT FLAGGED: the gate is open'));
-if (!ctlFlagged) fails.push('control alloc lane not flagged');
+    (ctlFlagged ? 'flagged (expected)' : ctlUndrained ? 'NOT FLAGGED, observer not drained: UNDRAINED'
+        : 'NOT FLAGGED: the gate is open'));
+if (ctlUndrained) undrained.push(CONTROL[0]);
+else if (!ctlFlagged) fails.push('control alloc lane not flagged');
 ctlSink.length = 0;
 
-const ok = fails.length === 0 && ctlFlagged && lanesOk === LANES.length && live <= MAX_LIVE &&
-    alive <= MAX_LIVE && findings.length === 0 && leaks.length === 0 &&
-    p1checks === CYCLES * P1_QUERIES * KERN.length && retFlagged;
+// clean = no failure anywhere (an UNDRAINED lane / control stands in for its ok / flagged term).
+const clean = fails.length === 0 && (ctlFlagged || ctlUndrained) && lanesOk + lanesUndrained === LANES.length &&
+    live <= MAX_LIVE && alive <= MAX_LIVE && findings.length === 0 && leaks.length === 0 &&
+    p1checks === CYCLES * P1_QUERIES * KERN.length && (retFlagged || retUndrained);
+// Run verdict (NF-R1): FAIL > NO VERDICT > ok.
+const verdict = !clean ? 'FAIL' : undrained.length !== 0 ? 'NO VERDICT' : 'ok';
 console.log('PHASE1 cycles=' + CYCLES + ' checks=' + p1checks + '/' + (CYCLES * P1_QUERIES * KERN.length) + ' size=' + live + ' alive=' + alive +
     ' orphans=' + orphans + ' leaks=' + leaks.length + (LEAK ? ' (LITE_BISECT_TORTURE_LEAK=1 control)' : ''));
 console.log('PHASE2 lanes=' + lanesOk + '/' + LANES.length + ' ops/lane=' + HOT + ' retained B/op min=' +
@@ -380,8 +421,8 @@ console.log(
     ' warnings=' + warns.length +
     ' | gc major=' + sumMajor + ' minor=' + sumMinor + ' maxMs=' + maxMs.toFixed(2) +
     ' | retained=' + maxBpo.toFixed(3) + ' B/op' +
-    ' | ' + (ok ? 'ok' : 'FAIL'));
-if (!ok) {
+    ' | ' + verdict);
+if (verdict === 'FAIL') {
     for (const f of fails) console.error('  ' + f);
     for (const f of findings) console.error('  finding ' + f.kind + ':' + f.reason);
     for (const l of leaks.slice(0, 8)) console.error('  leak ' + l);
@@ -391,4 +432,7 @@ if (!ok) {
         console.error('  phase1 checks ' + p1checks + ' != ' + CYCLES + ' x ' + P1_QUERIES + ' x ' + KERN.length);
     }
     process.exitCode = 1;
+} else if (verdict === 'NO VERDICT') {
+    console.error('torture: NO VERDICT -- GC observer not drained (lanes: ' + undrained.join(', ') + ')');
+    process.exitCode = 2;
 }

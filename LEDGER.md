@@ -506,7 +506,7 @@ on these kernels. No single green gate authorises a release.
 - **Gate:** `npm test` (test/lu.test.mjs). Reopens with: an edit to luVersionOk or the env / installed order that no row
   of test/lu.test.mjs fails.
 
-### B16. A 200 ms settle() timeout failed an unplanted torture lane with every count zero *(FOUND 2026-11-22, nightly run 45024298534; RULED NF-R1 "Re-settle, then NO VERDICT (Recommended)", NF-R2 "Fix + 1 green nightly (Recommended)")*
+### B16. A 200 ms settle() timeout failed an unplanted torture lane with every count zero *(FOUND 2026-11-22, nightly run 45024298534; RULED NF-R1 "Re-settle, then NO VERDICT (Recommended)", NF-R2 "Fix + 1 green nightly (Recommended)"; FIXED 2026-11-22, UNIT 2b; NF-R2 nightly pending (ROADMAP 5h))*
 - **What happened:** nightly.yml run 45024298534 (2026-11-22T12:49Z, commit 1d797ce), leg `nightly (macos-latest, node
   latest)` (node v27.0.0-alpha.0.1.1, image macos-26-arm64 20261117.0516; the same node and image were green in run
   44906461931 the day before): torture control (b) saw the planted lane fail AND `LANE lowerBoundHintI32 major=0
@@ -532,17 +532,33 @@ on these kernels. No single green gate authorises a release.
   once 0.047); an
   instrumented copy printing st per lane (torture-instr.mjs): every unplanted FAIL `drained=false waited=303.4 ..
   304.2` ms, 3 / 10 runs (repro-2-instr-stop.log); the CLEAN build stalled: 3 / 10 runs exit 1 (repro-3-clean-stop.log),
-  so a standalone `npm run torture` is exposed too.
+  so a standalone `npm run torture` is exposed too. After 2b, the same SIGSTOP repro on the new harness (`stop 10 300 400
+  none`, 2026-11-22T20:09:57Z, node v26.8.2, the same host, untimed, host PRELIMINARY load1 4.04 -> 3.94): exit 0 10 / 10,
+  exit 1 0 / 10, exit 2 0 / 10 (.handoff/nightfail/coder-2b/repro-new.log; revert checks in coder-2b/revert/, fix-r1/,
+  review-2b/).
 - **Law:** 9 and I7 (load moved a gate that looked deterministic; here a wall-clock budget, after B11's GC helper
   thread). Fix (2a, diagnosability): a failing assertPlantLane prints the child's GATE line and stderr; the torture's
-  fails line names `settle drained=<b> waited=<n>ms`. Fix (2b, NF-R1; pending, UNIT 2b): re-settle with a 2000 ms
-  budget; still undrained = NO VERDICT (exit 2), never a pass, with a stall-hook must-fail control
-  (.handoff/nightfail/SPEC-2b.md).
+  fails line names `settle drained=<b> waited=<n>ms`. Fix (2b, NF-R1; landed): measureLane re-settles with
+  { maxWaitMs: 2000 } when settle() returns drained:false (or nullish); a lane still undrained but otherwise
+  ok reads UNDRAINED, one that also fails another channel is FAIL; a control neither flagged nor drained reads
+  UNDRAINED (a flagged control stays flagged, drained or not); run verdict FAIL exit 1 > NO VERDICT exit 2
+  (stderr `torture: NO VERDICT -- GC observer not drained (lanes: <names>)`) > ok exit 0, never a pass. Test-only hook
+  LITE_BISECT_TORTURE_STALL_MS (/^[1-9][0-9]{0,4}$/, else refused exit 2 before the build import) busy-waits that many
+  ms in a setTimeout(0) queued before every settle() of lane lowerBoundHintI32 only (.handoff/nightfail/SPEC-2b.md).
   Upstream lead for LiteGcProfiler: settle()'s 200 ms default turns a host stall into drained:false.
 - **Gate:** 2a: test/Bisect.torture-controls.test.mjs (e) (synthetic child; fails on the old assertPlantLane). 2b:
-  rows (f1)..(f4) per SPEC-2b (pending, UNIT 2b). Reopens with: an unplanted FAIL whose fails line reads
-  `settle drained=true` and no violation (a channel this entry did not see), or an undrained lane after the 2000 ms
-  re-settle on an idle host.
+  test/Bisect.torture-controls.test.mjs rows (f1) STALL_MS=300 -> exit 0, lane ok (kills: old 2a single settle + report.ok
+  overwrite, r1b -> exit 1; bare re-settle removal, r1a -> exit 2); (f2) 2300 -> exit 2, lane UNDRAINED, GATE NO VERDICT
+  (kills: UNDRAINED folded into FAIL, r2 -> exit 1); (f3) 2300 + the (a) box plant in another lane -> exit 1 (kills: run
+  precedence flipped, r3 -> exit 2); (f4) '0', '300ms', '100000', '' -> refusal exit 2, stdout '' (kills: validation
+  removed, r4; '' as unset, m12 -> exit 1 at ''); (f5) 2300 + a retaining plant IN lowerBoundHintI32 -> exit 1 (kills:
+  lane-level precedence flip, m11 -> exit 2). Review r1 REJECTED 2 LITERAL (m11, m12 survived the first 10 rows):
+  a precedence control must put both conditions on the SAME lane (cross-lane (f3) let m11 survive); r2 APPROVED
+  (.handoff/nightfail/review-2b/VERDICT-r1.md, VERDICT-r2.md). npm test 266 / 266 (was 261). Reopens with: an unplanted
+  FAIL whose fails line reads `settle drained=true` and no violation (a channel this entry did not see), or an
+  undrained lane after the 2000 ms re-settle on an idle host. Open (not ruled): CONTROL-retain's flag reads heap
+  samples taken before settle, so an unflagged + undrained retain control reads UNDRAINED (NO VERDICT) per the spec
+  where FAIL would be stronger; fail-closed either way (SPEC-2b.md OPEN).
 
 ---
 
