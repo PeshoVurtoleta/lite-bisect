@@ -17,15 +17,17 @@ const ROWS = [
     [['F64', 'F32', 'I32'], [-1, 1], 1e-17, 1],
     [['F64'], [-(2 ** 53), 2 ** 53 + 4], 2.5, 1],
     [['F64'], [-NI, 1e308], -1e308, 1],
+    [['F32'], [-NI, 1e38], -1e38, 1],     // neon-1: F32 analogue (1e38 stored as fround(1e38), finite)
     [['F64'], [-2, -1e-17], -1, 1],
     [['F64'], [-1e-300, 6], 3, 1],
     [['I32'], [-2147483648, 2147483647], -0.4999999999999999, 1],
     [['F32'], [-(2 ** 60), 2 ** 60 + 2 ** 38], 2 ** 37 + 1, 1],
     // unchanged behaviour
-    [['F64'], [-NI, NI], 0, 0],
-    [['F64'], [-NI, 5], 1, 1],
-    [['F64'], [1, NI], 1e300, 0],
-    [['F64'], [1, NI], NI, 1],
+    // Infinity rows on F32 too (neon-1): +-Infinity, 1 and 5 are float32-representable. NI exact match -> 1.
+    [['F64', 'F32'], [-NI, NI], 0, 0],
+    [['F64', 'F32'], [-NI, 5], 1, 1],
+    [['F64', 'F32'], [1, NI], 1e300, 0],
+    [['F64', 'F32'], [1, NI], NI, 1],
     [TYPES, [1, 3], 2, 0],                 // true tie -> lower
     [TYPES, [1, 3, 3, 5, 8], 4, 2],        // README example: 3 / 5 tie around x = 4 -> index 2
     // contract edges

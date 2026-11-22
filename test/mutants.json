@@ -1,5 +1,5 @@
 {
-  "comment": "LiteBisect U4 mutant rows (SPEC-p1 assertion 6). Every find is cut from the generated Bisect.js sha256 43add0b5 (the nearest.tie-le.* and nearest.rounded-tie.* rows from the AU-R1a build sha256 10add825, audit 2026-11-11 B3) and matches EXACTLY ONCE inside its fn span (export function <fn>( to the next export function or // END GENERATED); a regen that changes it makes the row NOT-APPLIED = FAIL (R3). Run: node test/mutant-run.mjs. Cut by .handoff/p1/evidence/u4-cut-mutants.mjs.",
+  "comment": "LiteBisect U4 mutant rows (SPEC-p1 assertion 6). Every find is cut from the generated Bisect.js sha256 43add0b5 (the nearest.tie-le.* and nearest.rounded-tie.* rows from the AU-R1a build sha256 10add825, audit 2026-11-11 B3; the nearest.inf-gt.* and nearest.au-r1a.F64 rows from the same bytes at cf1b677, audit 2026-11-22 neon-1, killed by the oracle infinity phase INF_GROUPS) and matches EXACTLY ONCE inside its fn span (export function <fn>( to the next export function or // END GENERATED); a regen that changes it makes the row NOT-APPLIED = FAIL (R3). Run: node test/mutant-run.mjs. Cut by .handoff/p1/evidence/u4-cut-mutants.mjs. Float-only rows: nearest.rounded-tie.* (F64 / F32 / I32: no rounded tie on U32 / U16) and nearest.inf-gt.* (F64 / F32: no integer array holds Infinity, so it is equivalent on U32 / U16 / I32). nearest.au-r1a is F64 only: on F32 it is an EQUIVALENT mutant (the guard matters only when q - x overflows to +Infinity with p = -Infinity, and a difference of two float32 values never overflows a double).",
   "cutFrom": "43add0b5e6ea7841ac3efaec3abd4865843369138617764314a579692590c0a6",
   "rows": [
     {
@@ -127,6 +127,20 @@
       "what": "nearest rounded tie reverted to lower (no TwoSum; killed by the oracle rounded-tie phase; U32 / U16 omitted: equivalent there)",
       "find": "return i - ((!((x - (d - s)) - (p + s) > (q - (u - t)) - (x + t)) && p * 0.5 + q * 0.5 !== -Infinity) | 0);",
       "replace": "return i - 1;"
+    },
+    {
+      "id": "nearest.inf-gt.F64",
+      "fn": "nearestF64",
+      "what": "nearest unequal-distance compare d < u flipped to d > u (wrong on an exact +Infinity match: u = Inf - Inf = NaN; float-only, equivalent on U32 / U16 / I32)",
+      "find": "if (d !== u) return d < u ? i - 1 : i;",
+      "replace": "if (d !== u) return d > u ? i : i - 1;"
+    },
+    {
+      "id": "nearest.au-r1a.F64",
+      "fn": "nearestF64",
+      "what": "nearest AU-R1a overflow guard removed (-Infinity lower neighbour, q - x overflows to +Infinity; F64 only, equivalent on F32)",
+      "find": " && p * 0.5 + q * 0.5 !== -Infinity",
+      "replace": ""
     },
     {
       "id": "nearest.exact-lower.F64",
@@ -274,6 +288,13 @@
       "what": "nearest rounded tie reverted to lower (no TwoSum; killed by the oracle rounded-tie phase; U32 / U16 omitted: equivalent there)",
       "find": "return i - ((!((x - (d - s)) - (p + s) > (q - (u - t)) - (x + t)) && p * 0.5 + q * 0.5 !== -Infinity) | 0);",
       "replace": "return i - 1;"
+    },
+    {
+      "id": "nearest.inf-gt.F32",
+      "fn": "nearestF32",
+      "what": "nearest unequal-distance compare d < u flipped to d > u (wrong on an exact +Infinity match: u = Inf - Inf = NaN; float-only, equivalent on U32 / U16 / I32)",
+      "find": "if (d !== u) return d < u ? i - 1 : i;",
+      "replace": "if (d !== u) return d > u ? i : i - 1;"
     },
     {
       "id": "nearest.exact-lower.F32",

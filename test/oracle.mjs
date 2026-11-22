@@ -196,6 +196,28 @@ export function isRoundedTie(p, x, q) {
     return X - exactUnits(p) !== exactUnits(q) - X;
 }
 
+// ---- infinity cases (audit 2026-11-22 neon-1) ----------------------------------------------
+// genArray and genTieCases are finite-only, so no round above stores +-Infinity in an array: a
+// nearest that mishandles an infinite neighbour (an exact +Infinity match, or a lower -Infinity
+// whose upper distance overflows) passed every phase. Float types only (no integer array holds an
+// Infinity). Each group: the stored values (typed per T), and LITERAL [x, want] answers typed from
+// the contract (an exact match wins; an infinite neighbour is never nearer than a finite one; two
+// infinite neighbours are a tie -> the lower index), never computed. runOracle checks the literal
+// answers against naiveNearest too (an oracle that disagrees throws) and sweeps every sub-range of
+// each group with INF_QUERIES against naiveNearest. Groups are named so a revert check can drop one.
+export const INF_GROUPS = [
+    { id: 'exact-inf', types: ['F64', 'F32'], vals: [1, Infinity], cases: [[Infinity, 1], [1e300, 0], [1, 0]] },
+    { id: 'lower-inf-overflow', types: ['F64'], vals: [-Infinity, 1e308], cases: [[-1e308, 1], [-Infinity, 0], [0, 1]] },
+    { id: 'lower-inf-f32', types: ['F32'], vals: [-Infinity, 1e38], cases: [[-1e38, 1], [-3.4028234663852886e38, 1]] },
+    { id: 'lower-inf', types: ['F64', 'F32'], vals: [-Infinity, 5], cases: [[1, 1], [-1e300, 1], [-Infinity, 0]] },
+    { id: 'both-inf', types: ['F64', 'F32'], vals: [-Infinity, Infinity],
+        cases: [[0, 0], [1e300, 0], [-1e300, 0], [Infinity, 1], [-Infinity, 0]] },
+    { id: 'dup-inf', types: ['F64', 'F32'], vals: [-Infinity, -Infinity, 0, Infinity, Infinity],
+        cases: [[1, 2], [-1, 2], [Infinity, 3], [-Infinity, 0]] },
+];
+export const INF_QUERIES = [NaN, -Infinity, Infinity, 0, -0, 1, -1, 5, 1e38, -1e38, 3.4028234663852886e38,
+    -3.4028234663852886e38, 1e300, -1e300, 1e308, -1e308, 1.7976931348623157e308, -1.7976931348623157e308];
+
 // Ranges: every [lo, hi) for n <= 24; else [0, n] plus 20 random sub-ranges.
 export function genRanges(rnd, n) {
     const r = [];
@@ -236,7 +258,8 @@ export function census(keys) {
 // definitions. Rounds 0..69: n = round (every sub-range for n <= 24, [0, n] + 20 random
 // above); then `bigRounds` rounds with n = 1 + rnd() * 300. Hints per (range, x), the
 // draft-check list: lo, hi, lo - 3, hi + 3, NaN, a random h in [lo, hi], the oracle answer.
-// Then, when `mod` has a nearest kernel, the rounded-tie phase (genTieCases, opts.tieDraws pairs).
+// Then, when `mod` has a nearest kernel, the rounded-tie phase (genTieCases, opts.tieDraws pairs)
+// and, for F64 / F32, the infinity phase (INF_GROUPS literal answers + every sub-range x INF_QUERIES).
 // Returns { checks, fails, msgs, perName, roundedTies } -- a function in `mod` that ran 0 checks
 // shows up in perName with 0 and the caller fails it; roundedTies counts the false rounded ties hit.
 export function runOracle(mod, T, seed, opts = {}) {
@@ -326,6 +349,30 @@ export function runOracle(mod, T, seed, opts = {}) {
             for (let k = 0; k < nears.length; k++) {
                 const got = nears[k][1](a, 0, 2, x); checks++; perName[nears[k][0]]++;
                 if (got !== wn) bad(nears[k][0], got, wn, 2, 0, 2, x);
+            }
+        }
+    }
+    // Infinity phase (nearest kernels, F64 / F32 only; no rnd draw, so it changes no stream above).
+    if (nears.length > 0 && (T === 'F64' || T === 'F32')) {
+        for (const g of INF_GROUPS) {
+            if (!g.types.includes(T)) continue;
+            const a = TYPES[T].from(g.vals), n = a.length;
+            for (const [x, want] of g.cases) {
+                const wn = naiveNearest(a, 0, n, x);
+                if (wn !== want) throw new Error('oracle: naiveNearest ' + T + ' ' + g.id + ' x=' + x + ' -> ' + wn + ', literal ' + want);
+                for (let k = 0; k < nears.length; k++) {
+                    const got = nears[k][1](a, 0, n, x); checks++; perName[nears[k][0]]++;
+                    if (got !== want) bad(nears[k][0], got, want, n, 0, n, x);
+                }
+            }
+            for (let lo = 0; lo <= n; lo++) for (let hi = lo; hi <= n; hi++) {
+                for (let q = 0; q < INF_QUERIES.length; q++) {
+                    const x = INF_QUERIES[q], wn = naiveNearest(a, lo, hi, x);
+                    for (let k = 0; k < nears.length; k++) {
+                        const got = nears[k][1](a, lo, hi, x); checks++; perName[nears[k][0]]++;
+                        if (got !== wn) bad(nears[k][0], got, wn, n, lo, hi, x);
+                    }
+                }
             }
         }
     }

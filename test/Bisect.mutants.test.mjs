@@ -78,14 +78,26 @@ test('mutants.json: every kernel x type has >= 1 row; ids unique; no inert row',
     for (const k of KERNELS) for (const T of TYPES) assert.ok(fns.has(k + T), 'no mutant row for ' + k + T);
     assert.equal(new Set(SPEC.rows.map((r) => r.id)).size, SPEC.rows.length);
     for (const r of SPEC.rows) assert.notEqual(r.find, r.replace, r.id + ' is inert');
-    // Same rows for every type (one per kernel per compare, x every oracle type), apart from
-    // nearest.rounded-tie.*: F64 / F32 / I32 only (on U32 / U16 no rounded tie exists, so the
-    // reverted tie-break is an equivalent mutant there and would SURVIVE).
-    const RT = 'nearest.rounded-tie.';
-    const perType = TYPES.map((T) => SPEC.rows.filter((r) => r.fn.endsWith(T) && !r.id.startsWith(RT)).length);
+    // Same rows for every type (one per kernel per compare, x every oracle type), apart from the
+    // type-restricted ids, each an equivalent mutant (it would SURVIVE) on the types it omits:
+    // nearest.rounded-tie.*: F64 / F32 / I32 (on U32 / U16 no rounded tie exists);
+    // nearest.inf-gt.*: F64 / F32 (no integer array holds an Infinity);
+    // nearest.au-r1a.*: F64 only (on F32 q - x of two float32 values never overflows a double).
+    const RESTRICTED = {
+        'nearest.rounded-tie.': ['nearestF32', 'nearestF64', 'nearestI32'],
+        'nearest.inf-gt.': ['nearestF32', 'nearestF64'],
+        'nearest.au-r1a.': ['nearestF64'],
+    };
+    const isRestricted = (r) => Object.keys(RESTRICTED).some((p) => r.id.startsWith(p));
+    const perType = TYPES.map((T) => SPEC.rows.filter((r) => r.fn.endsWith(T) && !isRestricted(r)).length);
     assert.ok(perType.every((n) => n === perType[0] && n > 0), 'rows per type ' + perType.join('/'));
-    assert.deepEqual(SPEC.rows.filter((r) => r.id.startsWith(RT)).map((r) => r.fn).sort(), ['nearestF32', 'nearestF64', 'nearestI32']);
-    assert.equal(SPEC.rows.length, perType[0] * TYPES.length + 3);
+    let extra = 0;
+    for (const [p, fns] of Object.entries(RESTRICTED)) {
+        assert.deepEqual(SPEC.rows.filter((r) => r.id.startsWith(p)).map((r) => r.fn).sort(), fns, p + '* fn set');
+        extra += fns.length;
+    }
+    assert.equal(SPEC.rows.length, perType[0] * TYPES.length + extra);
+    assert.equal(SPEC.rows.length, 106);
 });
 
 test('live: every row KILLED (killed === rows), every unmutated control PASS', async () => {
