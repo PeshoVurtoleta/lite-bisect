@@ -168,3 +168,55 @@ test('gen write mode: a flipped scratch copy is restored, then a second run is a
         assert.equal(r3.status, 0, r3.out);
     });
 });
+
+// BIS-neon-8: the END marker is a whole line, mirroring BEGIN. Trailing text after either
+// marker is exit 2 with the refusal text (through the real CLI, on a scratch copy).
+function markerTamper(dir, marker) {
+    const live = readFileSync(BISECT, 'utf8');
+    const line = '\n' + marker + '\n';
+    const at = live.indexOf(line);
+    assert.ok(at >= 0 && live.indexOf(line, at + 1) < 0, 'NOT-APPLIED: marker line not found once');
+    const cut = at + 1 + marker.length;
+    const p = join(dir, 'Bisect.js');
+    writeFileSync(p, live.slice(0, cut) + ' -- tampered' + live.slice(cut));
+    return p;
+}
+
+test('gen --check exits 2 with trailing text after the end marker, naming the refusal', () => {
+    withScratch((dir) => {
+        const r = gen(['--check', '--file', markerTamper(dir, END)]);
+        assert.equal(r.status, 2, r.out);
+        assert.match(r.out, /gen: end marker must be a whole line: /);
+    });
+});
+
+test('gen write mode exits 2 with trailing text after the end marker and leaves the file unchanged', () => {
+    withScratch((dir) => {
+        const p = markerTamper(dir, END);
+        const before = readFileSync(p);
+        const r = gen(['--file', p]);
+        assert.equal(r.status, 2, r.out);
+        assert.match(r.out, /gen: end marker must be a whole line: /);
+        assert.equal(Buffer.compare(readFileSync(p), before), 0, 'refused write changed bytes');
+    });
+});
+
+test('gen --check control: trailing text after the begin marker still exits 2 with its refusal', () => {
+    withScratch((dir) => {
+        const r = gen(['--check', '--file', markerTamper(dir, BEGIN)]);
+        assert.equal(r.status, 2, r.out);
+        assert.match(r.out, /gen: begin marker must be a whole line: /);
+    });
+});
+
+test('gen --check exits 0 with the end marker as the last line and no LF after it (EOF is a line end)', () => {
+    withScratch((dir) => {
+        const live = readFileSync(BISECT, 'utf8');
+        const at = live.indexOf('\n' + END + '\n');
+        assert.ok(at >= 0, 'NOT-APPLIED: end marker line not found');
+        const p = join(dir, 'Bisect.js');
+        writeFileSync(p, live.slice(0, at + 1 + END.length));
+        const r = gen(['--check', '--file', p]);
+        assert.equal(r.status, 0, r.out);
+    });
+});

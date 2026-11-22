@@ -74,6 +74,8 @@ const rs = bi + BEGIN.length + 1;
 if (!(bi < ei)) refuse('begin marker is not before the end marker: ' + file);
 if ((bi > 0 && ftext[bi - 1] !== '\n') || ftext[rs - 1] !== '\n') refuse('begin marker must be a whole line: ' + file);
 if (ftext[ei - 1] !== '\n' || ei < rs) refuse('end marker must start its own line after the begin marker line: ' + file);
+const ee = ei + END.length;
+if (ee < ftext.length && ftext[ee] !== '\n') refuse('end marker must be a whole line: ' + file);
 
 const want = Buffer.from(ftext.slice(0, rs) + region + ftext.slice(ei), 'latin1');
 

@@ -425,10 +425,11 @@ export function nearestI32(a, lo, hi, x) {
 
 // --- cold checks: one copy each, called by no kernel --------------------------------------------
 
-/** RangeError unless lo, hi are integers, 0 <= lo <= hi <= a.length, hi - lo <= 2^30 - 1. Reads only a.length. */
+/** RangeError unless a.length is a number and a.length, lo, hi are safe integers, 0 <= lo <= hi <= a.length, hi - lo <= 2^30 - 1. Reads only a.length. */
 export function assertRange(a, lo, hi) {
     const n = a.length;
-    if (Number.isInteger(lo) && Number.isInteger(hi) && 0 <= lo && lo <= hi && hi <= n && hi - lo <= 1073741823) return;
+    if (typeof n === 'number' && Number.isSafeInteger(n) && Number.isSafeInteger(lo) && Number.isSafeInteger(hi) &&
+        0 <= lo && lo <= hi && hi <= n && hi - lo <= 1073741823) return;
     // typeof, never String(), on a non-number: String() runs caller code (a toString) or throws TypeError.
     throw new RangeError('lite-bisect: bad range [' + (typeof lo === 'number' ? String(lo) : typeof lo) +
         ', ' + (typeof hi === 'number' ? String(hi) : typeof hi) +

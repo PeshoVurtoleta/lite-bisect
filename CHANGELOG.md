@@ -56,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wins (exit 1); a test-only LITE_BISECT_TORTURE_STALL_MS hook drives the must-fail controls.
 - R-LLMS-SNIPPETS: the `llms.txt` usage results are checked `// -> n` lines; the docs test runs the
   `llms.txt` js fences and fails on a bare `// <number>` result comment in README / `llms.txt`.
+- BIS-neon-8: assertRange / assertSorted throw RangeError on a non-number or unsafe a.length and on unsafe
+  lo / hi; every call on the five typed arrays keeps its result and message (parity). gen.mjs refuses
+  trailing text after the end marker.
 
 ### Changed
 

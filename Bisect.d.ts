@@ -231,8 +231,8 @@ export function nearestI32(a: Int32Array, lo: number, hi: number, x: number): nu
 // --- cold checks: one copy each, called by no kernel ------------------------------------------
 
 /**
- * Cold check: throws RangeError unless lo and hi are integers, 0 <= lo <= hi <= a.length and
- * hi - lo <= 2^30 - 1. Reads only a.length. Call it off the hot path.
+ * Cold check: throws RangeError unless a.length is a number and a.length, lo, hi are safe integers,
+ * 0 <= lo <= hi <= a.length and hi - lo <= 2^30 - 1. Reads only a.length. Call it off the hot path.
  */
 export function assertRange(a: BisectArray, lo: number, hi: number): void;
 

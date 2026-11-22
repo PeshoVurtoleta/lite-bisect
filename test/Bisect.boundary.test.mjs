@@ -356,3 +356,78 @@ test('cap: assertRange throws RangeError at hi - lo = 2^30 and returns at 2^30 -
     assert.throws(() => ar(spy, 0, P30), RangeError);
     for (const k of seen) assert.equal(k, 'length', 'assertRange read ' + String(k) + ' (P1-R4: only a.length)');
 });
+
+// ---- NEON-R3: a.length must be a number, and length, lo, hi safe integers ---------------
+// BIS-neon-8: HEAD returned undefined for { length: '5' } (coerced by <=) and for
+// { length: Infinity } with lo = hi = 1e20 (Number.isInteger(1e20) is true). Every row in the
+// first block returned undefined on HEAD and must throw RangeError now.
+const P53 = 2 ** 53;
+const SAFE = Number.MAX_SAFE_INTEGER;
+
+test('NEON-R3 assertRange: non-number or unsafe length, or unsafe lo / hi, is a RangeError', () => {
+    const ar = fn('assertRange');
+    const rows = [
+        [{ length: '5' }, 0, 5, "{ length: '5' }"],
+        [{ length: Infinity }, 1e20, 1e20, '{ length: Infinity }, 1e20, 1e20'],
+        [{ length: Infinity }, 0, 1, '{ length: Infinity }, 0, 1'],
+        [{ length: P53 }, 0, 1, '{ length: 2^53 }, 0, 1'],
+        [{ length: P53 }, P53, P53, '{ length: 2^53 }, 2^53, 2^53'],
+        [{ length: 1e20 }, 1e20, 1e20, '{ length: 1e20 }, 1e20, 1e20'],
+        [{ length: 5n }, 0, 5, '{ length: 5n }'],
+        [{ length: true }, 0, 1, '{ length: true }'],
+        [{ length: null }, 0, 0, '{ length: null }'],
+        [{ length: [5] }, 0, 5, '{ length: [5] }'],
+        [{ length: 2.5 }, 0, 2, '{ length: 2.5 }, 0, 2'],
+    ];
+    for (const [a, lo, hi, name] of rows) assert.throws(() => ar(a, lo, hi), RangeError, name);
+    // An object length is rejected without running its valueOf (typeof, never coercion).
+    let ran = 0;
+    const box = { valueOf() { ran++; return 5; }, toString() { ran++; return '5'; } };
+    assert.throws(() => ar({ length: box }, 0, 5), RangeError, '{ length: valueOf object }');
+    assert.equal(ran, 0, 'assertRange coerced an object length');
+    // Already RangeError on HEAD (length undefined: hi <= undefined is false); kept as a stated row.
+    assert.throws(() => ar({}, 0, 0), RangeError, '{} (length undefined)');
+    // Already RangeError on HEAD (hi > length); kept as stated rows for the unsafe lo / hi class.
+    for (const [lo, hi] of [[0, P53], [P53, P53], [0, 1e20], [1e20, 1e20], [P53, 5], [1e20, 5]]) {
+        assert.throws(() => ar({ length: 5 }, lo, hi), RangeError, '{ length: 5 }, ' + lo + ', ' + hi);
+    }
+});
+
+test('NEON-R3 assertRange: the largest safe length and safe lo / hi near it still return', () => {
+    const ar = fn('assertRange');
+    assert.equal(ar({ length: SAFE }, 0, 1), undefined);
+    assert.equal(ar({ length: SAFE }, SAFE, SAFE), undefined);
+    assert.equal(ar({ length: SAFE }, SAFE - 1073741823, SAFE), undefined);
+    assert.throws(() => ar({ length: SAFE }, SAFE - 1073741824, SAFE), RangeError, 'cap still applies');
+    assert.equal(ar({ length: 5 }, -0, 5), undefined, '-0 is a safe integer');
+});
+
+test('NEON-R3 parity class: every TypedArray type keeps its HEAD throw / return on every stated range', () => {
+    const ar = fn('assertRange');
+    const vals = [0, -0, 1, 2, 3, 6, 7, 8, -1, 0.5, 2.5, NaN, Infinity, -Infinity, P30 - 1, P30, P53, 1e20];
+    for (const T of ALL) {
+        for (const len of [0, 1, 7]) {
+            const a = new TYPES[T](len);
+            for (const lo of vals) {
+                for (const hi of vals) {
+                    // HEAD rule (stated, not imported): integers, 0 <= lo <= hi <= length, span cap.
+                    const ok = Number.isInteger(lo) && Number.isInteger(hi) && 0 <= lo && lo <= hi && hi <= len && hi - lo <= 1073741823;
+                    const name = T + '(' + len + ') [' + lo + ', ' + hi + ')';
+                    if (ok) assert.equal(ar(a, lo, hi), undefined, name);
+                    else assert.throws(() => ar(a, lo, hi), RangeError, name);
+                }
+            }
+        }
+    }
+});
+
+test('NEON-R3 assertSorted: an unsafe or non-number length is a RangeError before any element read', () => {
+    const as = fn('assertSorted');
+    let reads = 0;
+    const mk = (len) => new Proxy({}, { get(_, k) { if (k !== 'length') reads++; return k === 'length' ? len : 0; } });
+    assert.throws(() => as(mk('5'), 0, 5), RangeError, "{ length: '5' }");
+    assert.throws(() => as(mk(P53), 0, 1), RangeError, '{ length: 2^53 }');
+    assert.throws(() => as(mk(Infinity), 1e20, 1e20), RangeError, '{ length: Infinity }');
+    assert.equal(reads, 0, 'assertSorted read an element before rejecting the range');
+    for (const T of ALL) assert.equal(as(TYPES[T].of(1, 2, 3), 0, 3), undefined, T + ' sorted');
+});

@@ -178,7 +178,7 @@ Cold checks (one copy each, called by no kernel):
 
 | Export | Signature | Behavior |
 |---|---|---|
-| `assertRange` | `(a: BisectArray, lo: number, hi: number) => void` | `RangeError` unless `lo`, `hi` are integers, `0 <= lo <= hi <= a.length`, `hi - lo <= 2^30 - 1`. Reads only `a.length`. |
+| `assertRange` | `(a: BisectArray, lo: number, hi: number) => void` | `RangeError` unless `a.length` is a number and `a.length`, `lo`, `hi` are safe integers, `0 <= lo <= hi <= a.length`, `hi - lo <= 2^30 - 1`. Reads only `a.length`. |
 | `assertSorted` | `(a: BisectArray, lo: number, hi: number) => void` | `assertRange`, then `RangeError` on a NaN in `[lo, hi)` or a descent (`a[i] < a[i - 1]`). |
 
 `BisectArray` is the type `Float64Array | Float32Array | Uint32Array | Uint16Array | Int32Array`.
