@@ -31,8 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Kernels generated from one template (`scripts/gen.mjs`); `npm run gen:check` verifies the generated region.
 - Gates: a naive-reference oracle per type (4 seeds), a boundary table, mutant kills (103 rows), a torture
   run with a retained-heap gate, c8 coverage at 100% lines / branches, golden parity, a TurboFan inline pin
-  (traced per kernel x type, pinned Node), alloc and bytecode gates (`npm run gates:local`, LiteUtils
-  tools, pinned Node only, not yet in `npm test` or hosted CI), tsc type checks, a doc-truth test, and a size / pack gate (`npm run size`: the tarball file list and
+  (traced per kernel x type, pinned Node), alloc and bytecode gates (`npm run gates` on the devDependency `@zakkster/lite-utils` ^1.1.0, run by the
+  ci.yml `gates` job; `npm run gates:local` on a LiteUtils checkout; pinned Node only; not in `npm test`), tsc type checks, a doc-truth test, and a size / pack gate (`npm run size`: the tarball file list and
   committed size budgets; DETERMINISTIC, not in `npm test`). `npm run verify` chains test, torture, coverage,
   size and gates:local, fail-fast.
 - Tree-shaking gate under esbuild (`test/Bisect.shake.test.mjs`, in `npm test`); devDependency esbuild ^0.28.2.

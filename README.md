@@ -279,7 +279,7 @@ Gated numbers (each is ONE run, quoted as a measurement, never as a law):
 | Alloc gate, run B (not inlined) | non-Smi lanes (105) and the NaN-hint-read lanes (5) read 16.22 .. 16.95 B/op (one HeapNumber); Smi lanes (35) at most 0.97 B/op; literal-NaN-hint lanes (5) at most 0.68 B/op; empty lane 0.54 | same log |
 | Bytecode gate | branchless 103 B, branchy 55 B, hint 228 B, segment 25 B, nearest 189 B, five copies equal | same log |
 
-The alloc and bytecode gates are `npm run gates:local` (the LiteUtils tools, commit aed66841e7949130bc780147d765414873edc3b9, `alloc-per-op.mjs` sha256 d4386d85..., `bytecode-budget.sh` sha256 0b9c9157...). They run on the pinned Node v26.8.2 only and are NOT yet in `npm test` or hosted CI; a run on any other Node is NO VERDICT, never a pass. Tier: DETERMINISTIC when run, not yet wired into the default test run.
+The alloc and bytecode rows above were read with `npm run gates:local` (the LiteUtils tools, commit aed66841e7949130bc780147d765414873edc3b9, `alloc-per-op.mjs` sha256 d4386d85..., `bytecode-budget.sh` sha256 0b9c9157...). The gates run on the pinned Node v26.8.2 only; a run on any other Node is NO VERDICT, never a pass. `npm run gates` takes the tools from the devDependency `@zakkster/lite-utils` (^1.1.0, the first release that ships `alloc-per-op.mjs`) and runs in hosted CI (the `gates` job of `.github/workflows/ci.yml`, ubuntu-latest x86 and macos-latest arm64); `npm run gates:local` takes them from a LiteUtils checkout (`LITE_UTILS_DIR`, which overrides the installed package when set). A LiteUtils version outside ^1.1.0, or a missing tool, is NO VERDICT. Tier: DETERMINISTIC; not in `npm test`.
 
 </details>
 
@@ -314,7 +314,8 @@ npm run torture        # node --expose-gc --no-concurrent-recompilation --single
 npm run coverage       # c8, 100% lines and branches required
 npm run test:types     # tsc in node16 / nodenext / bundler resolution + export parity
 npm run gen:check      # the generated kernel region matches its template
-npm run gates:local    # alloc + bytecode gates (LiteUtils; pinned Node v26.8.2 only)
+npm run gates          # alloc + bytecode gates (installed @zakkster/lite-utils ^1.1.0; pinned Node v26.8.2 only; ci.yml gates job)
+npm run gates:local    # the same gates on a LiteUtils checkout (LITE_UTILS_DIR=../LiteUtils)
 npm run size           # npm pack file list + size budgets (test/gates/size-budget.json); not in npm test
 npm run verify         # test + torture + coverage + size + gates:local (fail-fast)
 ```

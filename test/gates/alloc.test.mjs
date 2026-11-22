@@ -39,7 +39,7 @@ import { loadavg, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { KERNELS, TYPE_NAMES } from '../oracle.mjs';
-import { resolveTools, provenanceLines, runBounded, missingGateFiles, PKG_ROOT } from './lu.mjs';
+import { resolveTools, luVerdict, provenanceLines, runBounded, missingGateFiles, PKG_ROOT } from './lu.mjs';
 
 const BENCH = fileURLToPath(new URL('./alloc-bench.mjs', import.meta.url));
 const LU_CLI = fileURLToPath(new URL('./lu.mjs', import.meta.url));
@@ -64,7 +64,7 @@ const PINNED_NODE = JSON.parse(readFileSync(new URL('./expect.json', import.meta
 const LU = resolveTools();
 const needLU = () => {
     if (process.version !== PINNED_NODE) assert.fail('NO VERDICT: node ' + process.version + ' is not the pinned ' + PINNED_NODE + ' (gates run on the pinned Node only)');
-    if (!LU.ok) assert.fail('NO VERDICT: ' + LU.reason);
+    const nv = luVerdict(LU); if (nv !== null) assert.fail(nv);
 };
 
 // ---- expected roster (oracle.mjs KERNELS x TYPE_NAMES x CLASSES) ------------------------------
@@ -320,6 +320,7 @@ test('control: a lane that boxes only from window 3 FAILS the per-window gate; t
         ['signal "space-used-paired"', cPaired, liveOld ? 'FAIL' : 'ok'],
         ['signal "total-allocated"', cUnknown, 'NO VERDICT'],
         ['signal null', cNull, 'NO VERDICT'],
+        ['live --json as read', clone(), 'ok'],
     ];
     const got = clones.map(([tag, json, want]) => [tag, lateGateVerdict(json, s.status, s.stdout).verdict, want]);
     console.log('# C-late3 live clones (' + (liveOld ? 'old tool' : 'new tool') + '): ' + got.map(([t, g, w]) => t + ' -> ' + g + ' (want ' + w + ')').join(' | '));

@@ -183,6 +183,8 @@ on these kernels. No single green gate authorises a release.
 - **Reason:** `^1.0.0` takes every minor; no LiteUtils 2.0.0 is planned. A future major is
   adopted on purpose.
 - **Evidence:** ROADMAP.md section 9.
+- **Amended 2026-11-22 (GU-R1, ROADMAP 5g):** the floor is `^1.1.0`, the first release that ships alloc-per-op.mjs;
+  `>=` stays refused.
 
 ### A3. A per-call strategy registry; choosing a kernel by timing at runtime *(REFUSED 2026-11-10, P0 PROPOSAL Q-R11)*
 - **Reason given:** a per-call lookup or indirect call makes the call site polymorphic and
@@ -246,6 +248,17 @@ on these kernels. No single green gate authorises a release.
 - **Law:** 5 and 9 (the A/A twin is what turned contention into NO VERDICT; the band is not widened to get a verdict).
 - **Reopens with:** a hosted run (R4) or a larger K that holds the A/A band under contention, with the must-fail SLOW
   control still tripping; a low-margin lane whose margin reaches >= 0.25 on both CPUs.
+
+### A9. Installed-first tool precedence once lite-utils is a devDependency *(RULED 2026-11-22, GU-R2 "Explicit env wins (Recommended)")*
+- **Reason:** SPEC-p1 U6 resolved the installed `@zakkster/lite-utils` first and LITE_UTILS_DIR only when nothing was
+  installed. With `^1.1.0` installed, `npm run gates:local` (and `npm run verify`, which runs it) would have read
+  node_modules silently, and a LiteUtils checkout under development could never be gated here. GU-R2: a set, non-empty
+  LITE_UTILS_DIR overrides the installed package; an invalid one is NO VERDICT, never a fall-through to the installed
+  package; the provenance line names the source and its version either way.
+- **Evidence:** ROADMAP.md section 5g; test/gates/lu.mjs; test/lu.test.mjs precedence rows (the old resolver read the
+  installed package in all 8: .handoff/gates/evidence/revert.txt).
+- **Law:** none new. **Gate:** `npm test` (test/lu.test.mjs: the GU-R2 precedence row and the seven `NV env dir ... (installed valid)` rows).
+- **Reopens with:** a CI job that sets LITE_UTILS_DIR, or a need to gate a checkout and the installed package in one run.
 
 ---
 
@@ -470,6 +483,28 @@ on these kernels. No single green gate authorises a release.
   clone row `['live --json as read', clone(), 'ok']` would make it a two-change bypass (the case B5 carries open)
   (NEXT.md FILLERS). Reopens with: the first
   lite-utils 1.1.0 run reading other than PASS on this row.
+- **Live read (2026-11-22, GATES unit):** the first space-used-paired run read as 1d797ce planned, on the installed
+  lite-utils 1.1.0 and on the LiteUtils checkout at v1.1.0 / 65e500c (tools byte-equal): --json exit 0 with top-level
+  signal "space-used-paired"; late3 windows 0..5 = 0.00 0.00 0.32 16.00 16.00 16.00; --max exit 1 + `gate --max 1
+  (peak B/op): FAIL`; gates 20 / 20 (node v26.8.2 / V8 14.6.202.34-node.28, darwin arm64, load1 2.15..5.22, one run per source plus one inside
+  the coder's verify; .handoff/gates/evidence/gates-installed.txt, gates-local.txt, verify.txt). The carried r2 NIT is CLOSED: the
+  live row's clones gained `['live --json as read', clone(), 'ok']` (GATES review r2: deleting the row's throw, or
+  calling lateGateVerdict at the live call, now fails on a planted unknown signal; .handoff/gates/review-r1/late3-r2.txt).
+
+### B15. The gates-unit resolver left five version / CLI conjuncts without a control *(FOUND 2026-11-22, GATES review r1; FIXED r2)*
+- **What happened:** test/gates/lu.mjs gained a `^1.1.0` version check (luVersionOk) and GU-R2 precedence; test/lu.test.mjs
+  (40 tests) killed 37 of the reviewer's 45 mutants. Survivors that change behaviour: `\d+` -> `\d*` (`'1.1.'` read ok),
+  `\.` -> `.` (`'1-1-0'` read ok), a string compare and a whole-string `v >= LU_FLOOR` (the row '1.10.0' cannot tell them
+  apart at floor 1.1.0; only a leading-zero minor can), and a bare `--root` (the CLI crashed exit 1, not NO VERDICT
+  exit 2). The nightly.yml header also still said "no test shells out to git" (lu.test.mjs builds git plants).
+- **Root cause:** the B14 shape again (law 9): a typed table that covers each branch but not each conjunct of the
+  pattern and the compare.
+- **Evidence:** .handoff/gates/review-r1/VERDICT-r1.md, mutants-r1.txt; fix: 3 table entries (`'1.1.'` false, `'1-1-0'`
+  false, `'1.01.0'` true per the brief's "as numbers") + a bare `--root` CLI row (41 tests); VERDICT-r2.md.
+- **Law:** 9 (none new). Carried open: three equivalent mutants (patch compare at floor patch 0, `v ?` on an env string,
+  the CLI deciding `r.ok` inline); leading-zero versions read ok (a DESIGN change to refuse them; npm publishes none).
+- **Gate:** `npm test` (test/lu.test.mjs). Reopens with: an edit to luVersionOk or the env / installed order that no row
+  of test/lu.test.mjs fails.
 
 ---
 

@@ -21,7 +21,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolveTools, provenanceLines, runBounded, missingGateFiles, PKG_ROOT } from './lu.mjs';
+import { resolveTools, luVerdict, provenanceLines, runBounded, missingGateFiles, PKG_ROOT } from './lu.mjs';
 
 const EXPECT = JSON.parse(readFileSync(new URL('./expect.json', import.meta.url), 'utf8'));
 const DRIVER = fileURLToPath(new URL('./bytecode-driver.mjs', import.meta.url));
@@ -40,7 +40,7 @@ const LU = resolveTools();
 const need = () => {
     if (process.version !== PINNED_NODE) assert.fail('NO VERDICT: node ' + process.version + ' is not the pinned ' + PINNED_NODE + ' (gates run on the pinned Node only)');
     if (!process.versions.v8.startsWith(EXPECT.pinned.v8Prefix)) assert.fail('NO VERDICT: V8 ' + process.versions.v8 + ' is not ' + EXPECT.pinned.v8Prefix);
-    if (!LU.ok) assert.fail('NO VERDICT: ' + LU.reason);
+    const nv = luVerdict(LU); if (nv !== null) assert.fail(nv);
 };
 
 export function maxOf(row) {

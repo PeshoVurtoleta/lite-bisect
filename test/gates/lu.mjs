@@ -1,9 +1,15 @@
 // test/gates/lu.mjs -- U6 (SPEC-p1 U6, P1-R1): find the LiteUtils tools and record their provenance.
 // Imported by test/gates/alloc.test.mjs and test/gates/bytecode.test.mjs; also a CLI:
 //   node test/gates/lu.mjs [--root DIR]   -> provenance lines, exit 0; else "NO VERDICT: ..." exit 2
-// Resolution order (P1-R1): an installed @zakkster/lite-utils (its package.json `bin` entry, else the file
-// at its root), else LITE_UTILS_DIR (absolute, or relative to the package root -- never to the cwd).
-// Neither -> NO VERDICT. package.json lists no @zakkster/lite-utils until 1.0 is on npm (P1-R1).
+// Resolution order (GU-R2, maintainer 2026-11-22, amends SPEC-p1 U6): a set, non-empty LITE_UTILS_DIR (absolute,
+// or relative to the package root -- never to the cwd) is an explicit opt-in and is the ONLY source read: an invalid
+// env dir is NO VERDICT and never falls through to the installed package. LITE_UTILS_DIR unset or '' -> the
+// installed @zakkster/lite-utils (its package.json `bin` entry by name, else the file at its root). Neither -> NO
+// VERDICT. `npm run gates` = the installed package (CI never sets LITE_UTILS_DIR); `npm run gates:local` = the checkout.
+// Version floor (GU-R1, maintainer 2026-11-22, amends Q-LU-1a): package.json devDependencies pins
+// "@zakkster/lite-utils": "^1.1.0" (1.0.0 shipped no alloc-per-op.mjs). BOTH sources read their package.json
+// `version` and are NO VERDICT unless luVersionOk() (a plain x.y.z inside ^LU_FLOOR). The source line names the version.
+// Every NO VERDICT decision goes through luVerdict() (one function for the gates, the CLI and the controls).
 // Provenance per run (SPEC-p1 RISK R7): LiteUtils git commit, a dirty flag per tool file
 // (`git status --porcelain --ignored -- <tool>`: '' clean, else its status code, e.g. M, ?? or !!), sha256 of every
 // tool file, node --version, load average. A LITE_UTILS_DIR whose commit cannot be read is NO VERDICT.
@@ -20,6 +26,43 @@ import { fileURLToPath } from 'node:url';
 export const PKG_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 export const TOOLS = ['alloc-per-op.mjs', 'bytecode-budget.sh'];
 const LU_NAME = '@zakkster/lite-utils';
+export const LU_FLOOR = '1.1.0';
+const LU_RANGE = '^' + LU_FLOOR;
+
+/** true only for a string 'x.y.z' (decimal digits, no prerelease / build / whitespace) inside ^LU_FLOOR. */
+export function luVersionOk(v) {
+    if (typeof v !== 'string') return false;
+    const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(v);
+    if (m === null) return false;
+    const f = /^(\d+)\.(\d+)\.(\d+)$/.exec(LU_FLOOR);
+    const maj = Number(m[1]), min = Number(m[2]), pat = Number(m[3]);
+    const fMaj = Number(f[1]), fMin = Number(f[2]), fPat = Number(f[3]);
+    if (maj !== fMaj) return false;
+    if (min !== fMin) return min > fMin;
+    return pat >= fPat;
+}
+
+/** The one NO VERDICT decision: null when r.ok === true, else 'NO VERDICT: ' + r.reason. */
+export function luVerdict(r) {
+    if (r !== null && typeof r === 'object' && r.ok === true) return null;
+    const reason = r !== null && typeof r === 'object' && typeof r.reason === 'string' ? r.reason : 'no reason given';
+    return 'NO VERDICT: ' + reason;
+}
+
+/** Read <dir>/package.json -> { meta } or { reason } (missing, unreadable or not a JSON object). */
+function readMeta(pj, what) {
+    let meta;
+    try { meta = JSON.parse(readFileSync(pj, 'utf8')); } catch (e) {
+        return { reason: what + ' has an unreadable package.json (' + pj + '): ' + e.message };
+    }
+    if (meta === null || typeof meta !== 'object' || Array.isArray(meta)) {
+        return { reason: what + ' package.json is not a JSON object (' + pj + ')' };
+    }
+    if (!luVersionOk(meta.version)) {
+        return { reason: what + ' version ' + JSON.stringify(meta.version) + ' is not inside ' + LU_RANGE + ' (' + pj + ')' };
+    }
+    return { meta };
+}
 
 export function sha256File(p) {
     return createHash('sha256').update(readFileSync(p)).digest('hex');
@@ -52,11 +95,10 @@ function fromInstalled(root) {
     const dir = join(root, 'node_modules', '@zakkster', 'lite-utils');
     const pj = join(dir, 'package.json');
     if (!isFile(pj)) return null;
-    let meta;
-    try { meta = JSON.parse(readFileSync(pj, 'utf8')); } catch (e) {
-        return { ok: false, reason: 'installed ' + LU_NAME + ' has an unreadable package.json: ' + e.message };
-    }
-    const bin = meta && typeof meta.bin === 'object' && meta.bin !== null ? meta.bin : {};
+    const rm = readMeta(pj, 'installed ' + LU_NAME);
+    if (rm.meta === undefined) return { ok: false, reason: rm.reason };
+    const meta = rm.meta;
+    const bin = typeof meta.bin === 'object' && meta.bin !== null ? meta.bin : {};
     const tools = {};
     for (const t of TOOLS) {
         const stem = t.replace(/\.(mjs|sh)$/, '');
@@ -65,14 +107,16 @@ function fromInstalled(root) {
         if (!isFile(p)) return { ok: false, reason: 'installed ' + LU_NAME + ' has no ' + t + ' (looked at ' + p + ')' };
         tools[t] = p;
     }
-    return { ok: true, source: 'installed ' + LU_NAME + '@' + String(meta.version), dir, tools, commit: 'n/a (installed)', dirty: {} };
+    return { ok: true, source: 'installed ' + LU_NAME + '@' + meta.version, dir, tools, commit: 'n/a (installed)', dirty: {} };
 }
 
-function fromEnvDir(root, env) {
-    const v = env.LITE_UTILS_DIR;
-    if (v === undefined || v === '') return null;
+function fromEnvDir(root, v) {
     const dir = isAbsolute(v) ? v : resolve(root, v);
     if (!isDir(dir)) return { ok: false, reason: 'LITE_UTILS_DIR is not a directory: ' + dir };
+    const pj = join(dir, 'package.json');
+    if (!isFile(pj)) return { ok: false, reason: 'LITE_UTILS_DIR has no package.json (version unknown): ' + pj };
+    const rm = readMeta(pj, 'LITE_UTILS_DIR');
+    if (rm.meta === undefined) return { ok: false, reason: rm.reason };
     const tools = {};
     for (const t of TOOLS) {
         const p = join(dir, t);
@@ -89,18 +133,20 @@ function fromEnvDir(root, env) {
         if (s === null) return { ok: false, reason: 'git status failed for ' + t + ' in ' + dir };
         dirty[t] = s.trim() === '' ? 'clean' : 'dirty(' + s.trim().split(/\s+/)[0] + ')';
     }
-    return { ok: true, source: 'LITE_UTILS_DIR=' + v, dir, tools, commit: head.trim(), dirty };
+    return { ok: true, source: 'LITE_UTILS_DIR=' + v + ' (' + LU_NAME + '@' + rm.meta.version + ')', dir, tools, commit: head.trim(), dirty };
 }
 
 /**
  * Resolve the tools. { ok: true, source, dir, tools: { name: absPath }, commit, dirty, sha256 } or
- * { ok: false, reason } (NO VERDICT). Pure over (root, env) apart from the file system and git reads.
+ * { ok: false, reason } (NO VERDICT; judge it with luVerdict). Pure over (root, env) apart from the file system and
+ * git reads. GU-R2: a set, non-empty env.LITE_UTILS_DIR is the only source; else the installed package.
  */
 export function resolveTools({ root = PKG_ROOT, env = process.env } = {}) {
-    const r = fromInstalled(root) || fromEnvDir(root, env);
+    const v = env.LITE_UTILS_DIR;
+    const r = v !== undefined && v !== '' ? fromEnvDir(root, String(v)) : fromInstalled(root);
     if (r === null) {
         return { ok: false, reason: 'no LiteUtils: ' + LU_NAME + ' is not installed under ' + root +
-            ' and LITE_UTILS_DIR is unset (use npm run gates:local)' };
+            ' and LITE_UTILS_DIR is unset (npm ci installs ' + LU_RANGE + '; or use npm run gates:local)' };
     }
     if (!r.ok) return r;
     r.sha256 = {};
@@ -138,11 +184,13 @@ if (process.argv[1] && existsSync(process.argv[1]) && resolve(process.argv[1]) =
     const argv = process.argv.slice(2);
     for (let i = 0; i < argv.length; i++) {
         if (argv[i] === '--root' && i + 1 < argv.length) root = resolve(argv[++i]);
-        else { process.stderr.write('lu.mjs: NO VERDICT: unknown argument ' + argv[i] + '\n'); process.exit(2); }
+        else { root = null; break; }
     }
-    const r = resolveTools({ root });
-    if (!r.ok) {
-        process.stdout.write('NO VERDICT: ' + r.reason + '\n');
+    const r = root === null ? { ok: false, reason: 'lu.mjs: unknown argument (usage: lu.mjs [--root DIR]): ' + argv.join(' ') }
+        : resolveTools({ root });
+    const nv = luVerdict(r);
+    if (nv !== null) {
+        process.stdout.write(nv + '\n');
         process.exitCode = 2;
     } else {
         process.stdout.write(provenanceLines(r).join('\n') + '\n');

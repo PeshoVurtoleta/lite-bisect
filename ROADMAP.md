@@ -290,7 +290,7 @@ open" and resize its sketch. The workflows are `.github/workflows/ci.yml` and `n
 |---|---|---|---|
 | P3-R2 | matrix | "8 legs, as LiteUtils (Recommended)" | ubuntu-latest (x86) + macos-latest (arm64) x node 22 / 24 / 26, plus one node 26.8.2 leg per OS so the pinned M4 inline control runs in CI; M4 was traced only on Apple M4 Pro, so a red 26.8.2 ubuntu leg is a finding to rule, never continue-on-error |
 | P3-R3 | steps per leg | "test+torture all, cov+size once (Recommended)" | `npm test` and `npm run torture` (the script owns the pinned flags) on every leg; `npm run coverage` and `npm run size` once, on ubuntu-latest node 26 (CPU-independent; size reads that leg's npm pack); no continue-on-error |
-| P3-R4 | LiteUtils `gates` job | "Nothing now; later unit (Recommended)" | no gates job and no stub until LiteUtils 1.0 is on npm (P1-R1); NEXT.md carries a "gates CI job" unit (lite-utils devDep, then a job running `npm run gates`) that blocks `/release 1.0.0` |
+| P3-R4 | LiteUtils `gates` job | "Nothing now; later unit (Recommended)" | (trigger met 2026-11-22: the ci.yml `gates` job, section 5g) no gates job and no stub until LiteUtils 1.0 is on npm (P1-R1); NEXT.md carries a "gates CI job" unit (lite-utils devDep, then a job running `npm run gates`) that blocks `/release 1.0.0` |
 | P3-R5 | nightly | "Separate nightly.yml (Recommended)" | `.github/workflows/nightly.yml`: daily cron + workflow_dispatch, the same DETERMINISTIC steps as ci.yml on node 'latest' (check-latest) and '22' x ubuntu-latest / macos-latest; never a required check; the STATISTICAL A/B lane joins later, from its ruled PROPOSAL |
 | P3-R5a | which nightly counts toward section 8 P3 "CI nightly green for a week" (asked in chat 2026-11-11 after the burst; the P3-R5 question text assumed nightly.yml, no ruling text said so) | "I agree" (to the orchestrator's recommendation) | the week = 7 consecutive green runs of the DETERMINISTIC `nightly.yml` only; the STATISTICAL A/B is gated ONCE per release by one release-gating run on x86 AND arm64 that passes its own controls (A/A band, must-fail SLOW control), never by a streak; any nightly A/B run is REPORTED evidence only and gates nothing. Not chosen: the A/B lane counting toward the week (a timing streak multiplies the false-red rate by ~7 on hosted runners and turns the once-per-release verdict into a streak); both lanes counting |
 | P3-R6 | action pinning | "Major tags @v7, as the suite (Recommended)" | actions/checkout@v7 + actions/setup-node@v7, `permissions: contents: read`, `persist-credentials: false`; same as LiteUtils / LiteSignal (one suite-wide bump); full-SHA pins not chosen |
@@ -337,6 +337,21 @@ Gate-unit rulings (maintainer, 2026-11-12, AskUserQuestion during the P3 A/B gat
 | AB-G1 | "FINDING wins (Recommended)" | a clean gated lane reading another word is a FINDING even when other gated lanes are VOID (listed on the verdict line; a missing gated lane: AB-G1a); no re-dispatch wins the word back |
 | AB-G1a | "Keep: missing = NO VERDICT (Recommended)" | AB-G1 covers VOID gated lanes in a complete gate run (23 lanes, K = 11, C = 3, no injection, PROV end, no STOP); a missing gated lane (subset, truncated, killed or STOPped run) is NO VERDICT, the wrong gated words listed on the line |
 | AB-G2 | "Bind live = frozen (Recommended)" | the gate times the frozen 88e5b1c-10add825 kernels and STOPs (ANCHOR, NO VERDICT) if a live Bisect.js F64 kernel body differs from its frozen body byte for byte |
+
+## 5g. Gates-unit rulings (maintainer, 2026-11-22, release-program step 2, P1-R1 / P3-R4)
+
+Trigger met: `@zakkster/lite-utils` 1.1.0 (the first release that ships alloc-per-op.mjs) is on npm, `latest`
+(checked 2026-11-22; LiteUtils tag v1.1.0, commit 65e500c). Quoted:
+
+| Id | Question | Ruling | Means |
+|---|---|---|---|
+| GU-R1 | the lite-utils devDependency floor (asked 2026-11-22 by the orchestrating session; amends Q-LU-1a) | "the lite-utils devDependency floor is `^1.1.0`" | package.json devDependencies `"@zakkster/lite-utils": "^1.1.0"`; `dependencies` stays empty; test/gates/lu.mjs reads an installed or LITE_UTILS_DIR version outside `^1.1.0` (or a missing tool) as NO VERDICT, never PASS. Not chosen: keep Q-LU-1a `^1.0.0` (1.0.0 ships no alloc-per-op.mjs) |
+| GU-R2 | tool precedence once lite-utils is installed (asked in chat 2026-11-22, gates burst; SPEC-p1 U6 resolved installed first, so `gates:local` and `verify` would silently read node_modules) | "Explicit env wins (Recommended)" | a set, non-empty LITE_UTILS_DIR overrides the installed package (an explicit opt-in; CI never sets it); an invalid LITE_UTILS_DIR is NO VERDICT, never a fall-through; `npm run gates` = the installed 1.1.0, `npm run gates:local` = the ../LiteUtils checkout; the provenance line names the source either way. Amends SPEC-p1 U6's order. Not chosen: keep the spec order (installed first; gates:local then equals gates and the env path runs only in controls) |
+
+Also recorded 2026-11-22, step 1 of the release program (P3-R5a) MET: nightly.yml green on every scheduled run from
+2026-11-12 to 2026-11-21, 10 consecutive (>= 7): 43225037751 (2026-11-12, 679dcad), then 9 on 1d797ce --
+43426301625 (11-13), 43591341020, 43712659199, 43872490491, 44096420609, 44313222939, 44537310359, 44745146653,
+44906461931 (11-21) (read with `gh run list --workflow nightly.yml`, 2026-11-22).
 
 ## 6. Verification plan, by tier
 
@@ -400,7 +415,7 @@ PR) and `nightly.yml` (daily), DETERMINISTIC tier only. The sketch below stays a
   written before each run, and a maintainer ruling per question. Each finding that confirms or
   breaks an inherited LEDGER entry (`I<n>`) becomes a `C<n>` entry there.
 - **P1 package:** the kernels that survived P0, per element type, plus node:test and the
-  0 B/op gate. `Bisect.draft.js` is never shipped as is. `@zakkster/lite-utils` `^1.0.0` is
+  0 B/op gate. `Bisect.draft.js` is never shipped as is. `@zakkster/lite-utils` `^1.0.0` (`^1.1.0` since GU-R1) is
   a devDependency and the tools are called through its bins (Q-LU-1, Q-LU-1a, section 9).
 - **P1 final audit (maintainer, 2026-11-11):** "one dual final review - fable 5.2 high and
   opus 5.5 high, as the rules say, and one session to confirm all the findings + fix. See
@@ -451,6 +466,9 @@ release, once the A/B result (P3-R1) is known. Each item names its trigger and w
    and the maintainer puts it in 1.1.0 as top priority, work starting Saturday 2026-11-14). Then add
    `@zakkster/lite-utils` as a devDependency (floor ^1.1.0, the first release with the tool: a Q-LU-1a amendment
    to ask) and move `gates` into ci.yml. (A green `gates` run is still needed BEFORE 1.0.)
+   **Status 2026-11-22 (GATES unit, section 5g):** trigger met; devDependency `^1.1.0` (GU-R1), LITE_UTILS_DIR wins
+   when set (GU-R2), ci.yml `gates` job (ubuntu-latest + macos-latest, node 26.8.2) written; the first green hosted
+   `gates` run is pending the maintainer's push (release-program step 2).
 5. **REPORTED n-sweep tables (P3-R1).** A 1.0.x docs-only release with provenance; gates nothing.
    - Method (Drepper, "What Every Programmer Should Know About Memory", 2007; principles, not its numbers): a
      working-set sweep, with n points placed on EACH host's own boundaries (L1D, L2, LLC, TLB reach = TLB
@@ -549,7 +567,7 @@ The quiet lock is a suite hook (`~/.claude/hooks/quiet-lock.mjs`), not part of L
 **Q-LU-1 -- RULED 2026-11-10 (maintainer):** "add LiteUtils as a devDependency - it would be
 further developed, so 1.0.0 and above would assure that always the newest version will be
 installed".
-- `@zakkster/lite-utils` is a devDependency at `^1.0.0` (Q-LU-1a), not an exact pin, so
+- `@zakkster/lite-utils` is a devDependency at `^1.0.0` (Q-LU-1a; `^1.1.0` since GU-R1, section 5g), not an exact pin, so
   LiteBisect follows LiteUtils as it develops. npm scripts call its bins; hosted CI gets the
   tools from `npm install`. `dependencies` stays empty, so the zero-deps law holds.
 - Needs: a LiteUtils release >= 1.0.0 that ships `bin` entries (or `exports`) for the tools in
@@ -576,6 +594,10 @@ fixes alloc-per-op's STEADY fail-open, LiteBisect's alloc gate results change wi
 this repo. That is a new mechanism, so the LEDGER rules allow reopening Q-LU-1a; whether to
 reopen is the maintainer's decision. Raised 2026-11-10 (P0 burst 2), ruled "Keep ^1.0.0": NOT reopened. `^1.0.0` stands, with the installed version
 recorded in every run's provenance.
+
+**Amendment to Q-LU-1a (2026-11-22, GU-R1, section 5g):** the floor is `^1.1.0`, the first lite-utils release
+that ships alloc-per-op.mjs ("the lite-utils devDependency floor is `^1.1.0`"). The rest of Q-LU-1a (no `>=`, a
+2.0.0 only on purpose) stands.
 
 Until LiteUtils >= 1.0.0 is published, P0 research probes call the tools from the LiteUtils
 checkout by absolute path, and record the LiteUtils commit + sha in each probe's provenance.

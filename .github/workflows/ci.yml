@@ -5,8 +5,15 @@
 # finding to rule; no step or job is allowed to continue on error.
 # P3-R3: npm test + npm run torture on every leg (the package script owns the pinned node flags); coverage + size
 # run once, in the separate `coverage-size` job (ubuntu-latest, node 26), never behind a matrix `if:`.
-# P3-R4: no LiteUtils `gates` job and no stub (P1-R1: hosted CI only after LiteUtils 1.0 is on npm).
-# Shallow checkout is fine: no test shells out to git.
+# The `gates` job (P1-R1 trigger met: @zakkster/lite-utils 1.1.0 is on npm; GU-R1 pins the devDependency at ^1.1.0, so
+# `npm ci` installs the tools): npm run gates (test/gates/alloc.test.mjs + bytecode.test.mjs) on the INSTALLED package
+# (GU-R2: LITE_UTILS_DIR is a local opt-in; CI never sets it). It lives here and not in nightly.yml: ROADMAP 7 makes
+# ci.yml the every-push DETERMINISTIC gate and ROADMAP 8a item 4 says "move gates into ci.yml"; nightly runs node
+# latest / 22, where both gate files read NO VERDICT (they refuse any node but the expect.json pin, v26.8.2). The
+# alloc / bytecode gates are DETERMINISTIC (no clock is read for a verdict; the kill timers are bounds, not
+# measurements). node test/gates/lu.mjs prints the tool provenance first; its exit 2 (NO VERDICT) fails the job.
+# Shallow checkout is fine: no test reads this repo's git history (test/lu.test.mjs runs git only inside its own
+# mkdtemp plants).
 # SYNC: the `test` job steps match nightly.yml's except the ci-only 26.8.2 pin guard and nightly's setup-node
 # check-latest; keep the two in sync.
 # Watch on the first run: the coverage script's "test/!(*.inline|*.mutants).test.mjs" extglob goes to node --test
@@ -79,6 +86,48 @@ jobs:
         run: npm test
       - name: npm run torture
         run: npm run torture
+
+  gates:
+    name: gates (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    # 30: a first guess; re-size from the first run's wall times
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: ['26.8.2']
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: setup node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - name: provenance
+        run: |
+          node --version
+          npm --version
+          node -p "process.arch + ' ' + process.versions.v8"
+          uname -a
+      # fail the leg if setup-node resolved anything but the pin, or the pin drifted from the gates' expect.json
+      - name: node is exactly the gates pin
+        env:
+          PIN: ${{ matrix.node }}
+        run: |
+          test "$PIN" = 26.8.2
+          test "$(node --version)" = "v$PIN"
+          grep -q "^const PINNED_NODE = 'v$PIN';" test/Bisect.inline.test.mjs
+          test "$(node -p "require('./test/gates/expect.json').pinned.node")" = "v$PIN"
+      - name: npm ci
+        run: npm ci
+      - name: LiteUtils provenance (exit 2 = NO VERDICT fails the job)
+        run: node test/gates/lu.mjs
+      - name: npm run gates
+        run: npm run gates
 
   coverage-size:
     name: coverage + size (ubuntu-latest, node 26)
