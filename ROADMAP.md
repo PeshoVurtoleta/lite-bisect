@@ -337,6 +337,7 @@ Gate-unit rulings (maintainer, 2026-11-12, AskUserQuestion during the P3 A/B gat
 | AB-G1 | "FINDING wins (Recommended)" | a clean gated lane reading another word is a FINDING even when other gated lanes are VOID (listed on the verdict line; a missing gated lane: AB-G1a); no re-dispatch wins the word back |
 | AB-G1a | "Keep: missing = NO VERDICT (Recommended)" | AB-G1 covers VOID gated lanes in a complete gate run (23 lanes, K = 11, C = 3, no injection, PROV end, no STOP; since BIS-neon-2, c883d19, also HEADER NQ2 = NQ2, minWindow = MIN_N and exactly one PROV start); a missing gated lane (subset, truncated, killed or STOPped run) is NO VERDICT, the wrong gated words listed on the line |
 | AB-G2 | "Bind live = frozen (Recommended)" | the gate times the frozen 88e5b1c-10add825 kernels and STOPs (ANCHOR, NO VERDICT) if a live Bisect.js F64 kernel body differs from its frozen body byte for byte |
+| AB-G3 | "Re-judge Nov 12 run (Recommended)": Download run 43145179770's logs and judge them offline with today's stricter gate (--verdict-file, deterministic), after a session confirms the timing code and kernel bytes are unchanged since 679dcad (AB-G2). PASS on both OS = P3-R1 met; anything else stops again. (maintainer, 2026-11-23, after the second NO VERDICT, 45087568692) | done 2026-11-23 (REJUDGE burst): the bench/ab-gate.mjs diff 679dcad..3621f69 has no timing-path hunk (judge, selftest and comment hunks only), ab.yml is unchanged and the gate's ANCHOR check reads the live bodies byte-identical to frozen 10add825; the 3621f69 gate (7e0f9262) re-judged both rung-ALL logs: ubuntu `VERDICT PASS gated=13/13` (log 6035afb2), macOS `VERDICT PASS gated=13/13` (log d6cc3927), the same lines the run printed. P3-R1 MET (section 8). Evidence: .handoff/rejudge/REJUDGE.md |
 
 ## 5g. Gates-unit rulings (maintainer, 2026-11-22, release-program step 2, P1-R1 / P3-R4)
 
@@ -430,7 +431,7 @@ Quoted:
     PROPOSAL-ab section 2 expected words, every other lane is REPORTED. Per OS: PASS (exit 0), FINDING (3), NO VERDICT
     (2; 1 on a STOP or CRASH). The maintainer dispatches it once on the release candidate (one re-dispatch of a NO VERDICT run);
     the release needs PASS on both OS in one dispatch, its run id quoted. Never in `npm run verify`, never a required
-    check, no schedule (5f, AB-G1, AB-G1a, AB-G2). `ab-research.yml` stays REPORTED research (R4).
+    check, no schedule (5f, AB-G1, AB-G1a, AB-G2; for 1.0.0, AB-G3: ab.yml run 43145179770 on 679dcad, re-judged offline by the 3621f69 gate, stands for the release-candidate dispatch while the timing path is unchanged, LEDGER B19). `ab-research.yml` stays REPORTED research (R4).
 - **REPORTED:** n-sweep tables (n = 4 .. 1e7) per kernel and element type, with provenance.
 - **Revert check:** at adoption, each migrated call site's own tests must pass on both the old
   and the new search (same answers), and the A/B must be run on the real package, never on a
@@ -483,6 +484,11 @@ PR) and `nightly.yml` (daily), DETERMINISTIC tier only. The sketch below stays a
     docs release). Not chosen: ship 1.0 as correctness-only with neutral "When" wording and
     move every benchmark to 1.1. Needs first: the CI workflow (owner ruled 2026-11-11, section 5d) and the
     A/B tests (a research rung, then a gate unit); both may run during the final audit.
+  - P3-R1 status (2026-11-23): MET on ab.yml run 43145179770 (2026-11-12, 679dcad), re-judged
+    offline under AB-G3 (section 5f) by the 3621f69 gate: ubuntu (AMD EPYC 9V74) and macOS
+    (Apple M1 (Virtual)) both `VERDICT PASS gated=13/13 clean, every word as expected`. The
+    two later dispatches gave no verdict: 45079558712 (macOS selftest control, LEDGER B18) and
+    45087568692 (A/A drift on both OS, LEDGER B19). Evidence: .handoff/rejudge/REJUDGE.md.
 
 The likely outcome to plan for: the main value is ONE tested set of kernels with one contract
 replacing ~28 copies; speed wins are per site and must be shown per site.

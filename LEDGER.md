@@ -583,7 +583,7 @@ on these kernels. No single green gate authorises a release.
   oracle INF_GROUPS; test/gen.test.mjs END rows; test/Bisect.boundary.test.mjs assertRange rows. Reopens with: a verdict
   field read without both bounds; an oracle phase whose values miss part of the documented domain.
 
-### B18. A red ab.yml selftest row could not be diagnosed: the child's RESULT line was discarded *(FOUND 2026-11-23, ab.yml run 45079558712 macOS; UNEXPLAINED; RULED ABDIAG-R1 "Observability, then re-dispatch (Recommended)"; replay fixed 2026-11-23, unit ABOBS; cause still UNEXPLAINED until the re-dispatch reads)*
+### B18. A red ab.yml selftest row could not be diagnosed: the child's RESULT line was discarded *(FOUND 2026-11-23, ab.yml run 45079558712 macOS; UNEXPLAINED; RULED ABDIAG-R1 "Observability, then re-dispatch (Recommended)"; replay fixed 2026-11-23, unit ABOBS; the re-dispatch 45087568692 read SELFTEST all ok on both OS, so the control did not fail again; cause still UNEXPLAINED)*
 - **What happened:** on the Apple M1 (Virtual) leg, the selftest's must-fail timed control `slow-dead AB2 fw:128` printed no
   `VOID SLOW-DEAD` (`SELFTEST 1 FAIL`; the gate step was skipped; ubuntu read VERDICT PASS gated=13/13). That K = 3 child read
   `VOID (AA-DRIFT)` only: an unspinned A-twin passed slowOk (med > 1.25, q1 > 1.10 vs A). The 11-12 dispatch 43145179770
@@ -607,6 +607,28 @@ on these kernels. No single green gate authorises a release.
   (.handoff/abobs/VERDICTS.md). Then ONE ab.yml re-dispatch (ABDIAG-R1).
   Reopens with: a second red on any selftest control after that fix, read from its replayed lines; or a red selftest whose
   selftest.log lacks the failing child's RESULT line.
+  Status 2026-11-23: the re-dispatch 45087568692 (3621f69) read `SELFTEST all ok` on both OS, so neither Reopens
+  condition fired and no replay was printed. The 45079558712 failure stays UNEXPLAINED; the re-dispatch's gate step then gave no verdict
+  for a different reason (B19).
+
+### B19. Hosted A/A drift voided gated lanes on both OS in the ab.yml re-dispatch *(FOUND 2026-11-23, ab.yml run 45087568692; mechanism PRELIMINARY; RULED AB-G3 "Re-judge Nov 12 run (Recommended)"; P3-R1 MET on 43145179770, ROADMAP 5f / 8)*
+- **What happened:** the one re-dispatch of a NO VERDICT run (Q-AB-K), on 3621f69, node v26.8.2 / V8 14.6.202.34-node.28 on both OS: `SELFTEST all ok` on both OS, then
+  `VERDICT NO VERDICT (gated lane not clean)` on both. ubuntu (AMD EPYC 7763): uni:65536 VOID AA-DRIFT, aa
+  0.941[0.926..0.951], gated-clean=12/13. macOS (Apple M1 (Virtual)): uni:256 aa 1.051[0.762..1.133], walk:65536:1 aa
+  0.945[0.807..1.064], walk:65536:4 aa 1.099[0.953..1.218], ro:65536 aa 0.913[0.906..1.005], all VOID AA-DRIFT,
+  gated-clean=9/13. No clean gated lane read another word (no FINDING). A second NO VERDICT stops for a ruling.
+- **Root cause:** hosted-runner noise, PRELIMINARY. The A/A twin times A against itself, so a drift is not a kernel
+  result; the gate failed closed as designed. macOS PROV start load1 58.98 (end 11.32) fits; ubuntu PROV start load1
+  1.85 (end 1.09) shows no contention, so noise is not shown there. The run had no quiet host and one run per OS.
+- **Evidence:** `gh run view 45087568692 --log` (saved as .handoff/rejudge/run-45087568692.joblog); the re-judge of
+  43145179770 in .handoff/rejudge/REJUDGE.md (11-12, 679dcad: PASS gated=13/13 on both OS by the 3621f69 gate,
+  log sha256/8 6035afb2 ubuntu, d6cc3927 macOS; the equivalence check found no timing-path change since 679dcad).
+- **Law:** 5 (a timing verdict needs its controls and a range, never one run); none new.
+- **Gate:** .github/workflows/ab.yml + bench/ab-gate.mjs (STATISTICAL), unchanged: the A/A control is the gate working.
+  Reopens with: a gated lane reading another word (a FINDING) on any later ab.yml dispatch; a timing-path change to
+  bench/ab-gate.mjs, ab.yml or the frozen kernels after 3621f69 (the 43145179770 verdict then no longer applies); a
+  later A/A drift VOID on a dispatch whose PROV load lines show no contention on either leg (noise would then be the
+  wrong mechanism).
 
 ---
 
