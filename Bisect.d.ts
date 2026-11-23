@@ -45,7 +45,7 @@ export function upperBoundBranchyF64(a: Float64Array, lo: number, hi: number, x:
 
 /**
  * lower bound galloping out from the hint h: the first i in [lo, hi) with a[i] >= x, else hi. NaN x -> lo.
- * For coherent streams only (each h near its answer, e.g. the previous result); on incoherent streams it can be slower than lowerBoundBranchless* (PRELIMINARY, one CPU; no timing lane gated).
+ * For coherent streams only (each h near its answer, e.g. the previous result); on incoherent streams it can be slower than lowerBoundBranchless* (STATISTICAL for F64: ab.yml run 43145179770, two CPUs, n <= 65,536).
  * h is an integer index or NaN (NaN -> lo; outside [lo, hi] clamped). A non-integer h is a caller error
  * that may return a wrong index or never return.
  */
@@ -86,7 +86,7 @@ export function upperBoundBranchyF32(a: Float32Array, lo: number, hi: number, x:
 
 /**
  * lower bound galloping out from the hint h: the first i in [lo, hi) with a[i] >= x, else hi. NaN x -> lo.
- * For coherent streams only (each h near its answer, e.g. the previous result); on incoherent streams it can be slower than lowerBoundBranchless* (PRELIMINARY, one CPU; no timing lane gated).
+ * For coherent streams only (each h near its answer, e.g. the previous result); on incoherent streams it can be slower than lowerBoundBranchless* (STATISTICAL for F64: ab.yml run 43145179770, two CPUs, n <= 65,536; this copy's type is unmeasured).
  * h is an integer index or NaN (NaN -> lo; outside [lo, hi] clamped). A non-integer h is a caller error
  * that may return a wrong index or never return.
  */
@@ -127,7 +127,7 @@ export function upperBoundBranchyU32(a: Uint32Array, lo: number, hi: number, x: 
 
 /**
  * lower bound galloping out from the hint h: the first i in [lo, hi) with a[i] >= x, else hi. NaN x -> lo.
- * For coherent streams only (each h near its answer, e.g. the previous result); on incoherent streams it can be slower than lowerBoundBranchless* (PRELIMINARY, one CPU; no timing lane gated).
+ * For coherent streams only (each h near its answer, e.g. the previous result); on incoherent streams it can be slower than lowerBoundBranchless* (STATISTICAL for F64: ab.yml run 43145179770, two CPUs, n <= 65,536; this copy's type is unmeasured).
  * h is an integer index or NaN (NaN -> lo; outside [lo, hi] clamped). A non-integer h is a caller error
  * that may return a wrong index or never return.
  */
@@ -168,7 +168,7 @@ export function upperBoundBranchyU16(a: Uint16Array, lo: number, hi: number, x: 
 
 /**
  * lower bound galloping out from the hint h: the first i in [lo, hi) with a[i] >= x, else hi. NaN x -> lo.
- * For coherent streams only (each h near its answer, e.g. the previous result); on incoherent streams it can be slower than lowerBoundBranchless* (PRELIMINARY, one CPU; no timing lane gated).
+ * For coherent streams only (each h near its answer, e.g. the previous result); on incoherent streams it can be slower than lowerBoundBranchless* (STATISTICAL for F64: ab.yml run 43145179770, two CPUs, n <= 65,536; this copy's type is unmeasured).
  * h is an integer index or NaN (NaN -> lo; outside [lo, hi] clamped). A non-integer h is a caller error
  * that may return a wrong index or never return.
  */
@@ -209,7 +209,7 @@ export function upperBoundBranchyI32(a: Int32Array, lo: number, hi: number, x: n
 
 /**
  * lower bound galloping out from the hint h: the first i in [lo, hi) with a[i] >= x, else hi. NaN x -> lo.
- * For coherent streams only (each h near its answer, e.g. the previous result); on incoherent streams it can be slower than lowerBoundBranchless* (PRELIMINARY, one CPU; no timing lane gated).
+ * For coherent streams only (each h near its answer, e.g. the previous result); on incoherent streams it can be slower than lowerBoundBranchless* (STATISTICAL for F64: ab.yml run 43145179770, two CPUs, n <= 65,536; this copy's type is unmeasured).
  * h is an integer index or NaN (NaN -> lo; outside [lo, hi] clamped). A non-integer h is a caller error
  * that may return a wrong index or never return.
  */

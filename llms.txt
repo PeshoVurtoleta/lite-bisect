@@ -53,14 +53,18 @@ Pass a Smi query, and h = lo (or the literal NaN) instead of a NaN read at run t
 
 LEDGER and RESEARCH ids refer to LEDGER.md and RESEARCH.md in the source repository; they are not in the npm tarball.
 
-- lowerBoundBranchless* / upperBoundBranchless*: the default for a read-only search. No speed is
-  claimed. TurboFan inlines the 103 B body; Maglev does not inline it at its default 100 B cap
+- lowerBoundBranchless* / upperBoundBranchless*: the default for a read-only search. On F64 at
+  n 16 / 256 / 4096 / 65,536 lowerBoundBranchlessF64 read faster than lowerBoundBranchyF64 (STATISTICAL; time ratio 0.373..0.553; ab.yml run
+  43145179770, AMD EPYC 9V74 x86-64 and Apple M1 (Virtual) arm64). TurboFan inlines the 103 B body; Maglev does not inline it at its default 100 B cap
   (LEDGER C7; traced on the pinned Node v26.8.2, DETERMINISTIC inline pin).
 - lowerBoundBranchy* / upperBoundBranchy*: the result feeds a write (an insert position, a splice
-  index). Evidence I1 is inherited from another package and not re-run here: unproven for this package, no gate.
-- lowerBoundHint*: coherent query streams (each query near the previous answer). Slower on
-  incoherent streams (PRELIMINARY: one CPU, Apple M4 Pro; see RESEARCH.md 1.5); the STATISTICAL
-  lane is pending and no timing number is claimed. It answers a lower bound (first a[i] >= x),
+  index). On F64 at n 16 and 128 with the result feeding copyWithin, lowerBoundBranchlessF64 read slower than
+  lowerBoundBranchyF64 (STATISTICAL; time ratio 1.128..1.633 on both CPUs); n > 128 is not gated.
+- lowerBoundHint*: coherent query streams (each query near the previous answer). On F64, coherent
+  walk (n 4096 / 65,536, next answer 1 or 4 slots away): faster than lowerBoundBranchless* (STATISTICAL;
+  time ratio 0.352..0.572). Uniform (incoherent) queries at n 256 / 4096 / 65,536: slower (STATISTICAL;
+  time ratio 1.910..2.762), and n 256 with the next answer 4 slots away: slower (STATISTICAL; time ratio
+  1.217 / 1.311). Not measured: upperBound*, F32 / U32 / U16 / I32, n > 65,536, non-power-of-two n, Maglev-tier callers. It answers a lower bound (first a[i] >= x),
   not a segment (upper - 1); there is no segmentHint* export.
 - segment* / nearest*: "which interval holds x" / "which key is closest to x".
 - assertRange / assertSorted: setup and tests only.
@@ -92,7 +96,7 @@ v26.8.2 only, outside npm test, and in hosted CI (ci.yml gates job).
 Not a general search (typed arrays only, sorted, no NaN inside; no plain Array, no comparator).
 Not a sorter. Not a validator on the hot path. Not a polymorphic front (no lowerBound(a, ...)
 that picks a kernel; no length switch, no LINEAR_MAX, no lowerBoundLinear, no Eytzinger layout).
-Not a speed claim: no benchmark table ships.
+No benchmark table ships; the only speed words are the STATISTICAL rows of "Which call to choose" (F64, two CPUs, one gated release run).
 
 ## Links
 

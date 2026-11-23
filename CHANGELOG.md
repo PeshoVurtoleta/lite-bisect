@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-23
+
 ### Added
 
 - 37 exports in `Bisect.js`: 7 kernel families x 5 array types (suffix `F64` Float64Array,
@@ -35,6 +37,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ci.yml `gates` job; `npm run gates:local` on a LiteUtils checkout; pinned Node only; not in `npm test`), tsc type checks, a doc-truth test, and a size / pack gate (`npm run size`: the tarball file list and
   committed size budgets; DETERMINISTIC, not in `npm test`). `npm run verify` chains test, torture, coverage,
   size and gates:local, fail-fast.
+- A release A/B (`bench/ab-gate.mjs` in the source repository, hosted ab.yml on ubuntu-latest + macos-latest,
+  dispatch-only, once per release; STATISTICAL): 13 gated F64 lanes (hint vs branchless, branchless vs branchy
+  read-only and feeds-write); 1.0.0 is gated by run 43145179770 (VERDICT PASS gated=13/13 on AMD EPYC 9V74 x86-64
+  and Apple M1 (Virtual) arm64; re-judged 2026-11-23 under AB-G3).
 - Tree-shaking gate under esbuild (`test/Bisect.shake.test.mjs`, in `npm test`); devDependency esbuild ^0.28.2.
 - README, `llms.txt`, MIT `LICENSE.txt`.
 
@@ -77,7 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   against `files[]`; the pointer sentence excuses only the LEDGER and RESEARCH files; README and `llms.txt` join
   the speed check, which splits at sentences, paragraphs, JSDoc open / close, list items and table cells and
   exempts only a quoted, negated speed word naming a statement (`no "faster than" statement`). Three README / `llms.txt` speed sentences that
-  took their tier from the next sentence now carry it themselves (same evidence, PRELIMINARY).
+  took their tier from the next sentence now carry it themselves (same evidence, PRELIMINARY; the two hint sentences are STATISTICAL since R-README-TIERS).
 - BIS-neon-7: `package.json` had no `repository` while README and `llms.txt` point to the source repository:
   `repository` added (NEON-R2), and a docs row requires it whenever a shipped doc holds the pointer sentence.
   README offered `lowerBoundHintF64` as the hint for the `segmentF64` playhead; it answers a lower bound, not a
@@ -98,8 +104,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   caller; for no hint pass `lo` or the literal `NaN`. Alloc lanes `lowerBoundHint*.nanhint` and `.nanlit`.
 - R-RESEARCH-REF: README and `llms.txt` say LEDGER and RESEARCH ids refer to files in the source
   repository, not the npm tarball; a docs row checks every cited `<NAME>.md`.
-- R-DTS-TIER: the `lowerBoundHint*` declarations say the incoherent-stream slowdown is PRELIMINARY
-  (one CPU, no timing lane gated); a docs row fails an untiered "slower" / "faster" in `Bisect.d.ts`.
+- R-DTS-TIER: the `lowerBoundHint*` declarations say the incoherent-stream slowdown is STATISTICAL for F64
+  (ab.yml run 43145179770, two CPUs, n <= 65,536), no longer PRELIMINARY; a docs row fails an untiered "slower" / "faster" in `Bisect.d.ts`.
+- R-README-TIERS: the choice-table rows for branchless / branchy / hint carry STATISTICAL words from ab.yml run
+  43145179770 (both CPUs, F64; branchy n <= 128, the others n <= 65,536); the branchy row moved from INHERITED
+  to STATISTICAL (Q-AB-FEEDSWRITE).
 - NEON-R1 (BIS-neon-6; amends AU-R3 / R-NANHINT-BOX): the allocation sentence said "one 16 B HeapNumber per
   call"; two non-Smi arguments across a call V8 does not inline box 2 x 16 B, so it now says "one 16 B
   HeapNumber per such argument on Node" in `Bisect.js`, `Bisect.d.ts`, README, `llms.txt` and the docs-test
