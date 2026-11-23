@@ -583,25 +583,30 @@ on these kernels. No single green gate authorises a release.
   oracle INF_GROUPS; test/gen.test.mjs END rows; test/Bisect.boundary.test.mjs assertRange rows. Reopens with: a verdict
   field read without both bounds; an oracle phase whose values miss part of the documented domain.
 
-### B18. A red ab.yml selftest row could not be diagnosed: the child's RESULT line was discarded *(FOUND 2026-11-23, ab.yml run 45079558712 macOS; UNEXPLAINED; RULED ABDIAG-R1 "Observability, then re-dispatch (Recommended)"; fix pending)*
+### B18. A red ab.yml selftest row could not be diagnosed: the child's RESULT line was discarded *(FOUND 2026-11-23, ab.yml run 45079558712 macOS; UNEXPLAINED; RULED ABDIAG-R1 "Observability, then re-dispatch (Recommended)"; replay fixed 2026-11-23, unit ABOBS; cause still UNEXPLAINED until the re-dispatch reads)*
 - **What happened:** on the Apple M1 (Virtual) leg, the selftest's must-fail timed control `slow-dead AB2 fw:128` printed no
   `VOID SLOW-DEAD` (`SELFTEST 1 FAIL`; the gate step was skipped; ubuntu read VERDICT PASS gated=13/13). That K = 3 child read
   `VOID (AA-DRIFT)` only: an unspinned A-twin passed slowOk (med > 1.25, q1 > 1.10 vs A). The 11-12 dispatch 43145179770
   passed the same control on both legs.
 - **Root cause:** UNEXPLAINED. The lead "SLOW shares A's block on a lane that mutates it" is DISPROVEN by reading the code:
-  makeCols' `a` is kernel source text (block(), bench/ab-gate.mjs:262), and every column x copy is a fresh `new Function`
+  makeCols' `a` is kernel source text (block(), bench/ab-gate.mjs:262 at 8eb9bf8), and every column x copy is a fresh `new Function`
   with its own `lane.a.slice()` (buildEntry). The noise lead is unproven: K = 3 with column-major entries rotated one step
   per round keeps each column at nearly the same in-round positions, so one host stall can hit SLOW in 2 of 3 rounds.
-  The defect found: a FAILing timed row replays only the child's last 8 lines (:1155). The uploaded logs artifact is a tee
+  The defect found: a FAILing timed row replayed only the child's last 8 lines (:1155 at 8eb9bf8). The uploaded logs artifact is a tee
   of the same stdout, so no CI artifact holds the RESULT / RAW lines.
 - **Evidence:** .handoff/abdiag/DIAG.md; job log .handoff/audit-neon/ab/run-45079558712.log:875-882; local repro
   .handoff/abdiag/slowdead-fw128-local.txt (PRELIMINARY: Apple M4 Pro, node v26.8.2, load1 11.67 -> 11.91, quiet-lock run,
   8 children: 8 / 8 VOID SLOW-DEAD, per-round SLOW/A 0.86..1.12, per-round AA up to 1.65 / down to 0.67).
 - **Law:** 9 extended to a failing control. A control that fails must leave the numbers it failed on in the uploaded logs,
   otherwise its red run is a finding nobody can diagnose.
-- **Gate:** none yet (ABDIAG-R1: a coder unit replays the failing child's RESULT / RAW / VOID lines, plus a selftest row;
-  then one ab.yml re-dispatch). Reopens with: a second red on any selftest control after that fix, read from its replayed
-  lines.
+- **Gate:** ABOBS (bench/ab-gate.mjs failReplay + selftest row `SELFTEST replay: ...`, run first in every `--selftest`, so
+  in ab.yml's STOP gate): the selftest replays a FAILing child's (timed or fixture) RESULT / RAW / VOID / ORACLE / STOP /
+  CRASH lines from before its last 8 lines, then those 8 lines unchanged. The row is untimed (a stub child output, no
+  spawn) and pins row()'s printing call by its source text (String(row).includes); revert-checked: tail-only, row() back
+  to the 8eb9bf8 tail, the slice boundary +-1, the whole output filtered, each prefix kind, the `^` anchor
+  (.handoff/abobs/VERDICTS.md). Then ONE ab.yml re-dispatch (ABDIAG-R1).
+  Reopens with: a second red on any selftest control after that fix, read from its replayed lines; or a red selftest whose
+  selftest.log lacks the failing child's RESULT line.
 
 ---
 
@@ -866,6 +871,18 @@ on these kernels. No single green gate authorises a release.
 - **Law:** 11 (a probe harness is reviewed before its numbers count) applies to the orchestrator's own confirmation
   scripts. Lesson: a confirmation row prints the exact argv it ran and the test count it saw.
 - **Evidence:** CONFIRMATION.md neon-1 CORRECTION; evidence/C-revert-before.log. **Gate:** none (process).
+
+### D5. `| grep -m1` does not stop a synchronous node parent *(FOUND 2026-11-23, ABOBS coder)*
+- **What happened:** the ABOBS brief said `node ab-gate.mjs --selftest | grep -m1 'SELFTEST replay'` would stop before any
+  child spawned. The coder tested it under a spawnSync guard: grep printed the row and exited, but the parent kept writing
+  and reached the first `--verdict-file` spawnSync. Without the guard it would have run every fixture child and then the
+  TIMED children, outside the quiet lock.
+- **Root cause:** node ignores SIGPIPE; the EPIPE error arrives asynchronously, and selftest() is fully synchronous, so the
+  parent never yields to see it.
+- **Law:** none new (the quiet-lock rule: a timed run happens only under `quiet-lock.mjs run`). Lesson: an "untimed part"
+  of a synchronous runner is isolated by a preload that stubs spawnSync (exit at the first `--rung` child), never by a pipe.
+- **Evidence:** .handoff/abobs/VERDICTS.md (doc review r3 repro); the spawn guards .handoff/abobs/block-all.mjs /
+  block-timed.mjs. **Gate:** none (process).
 
 ## Not yet covered
 

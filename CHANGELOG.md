@@ -86,6 +86,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BIS-neon-8: `assertRange` / `assertSorted` throw RangeError on a non-number or unsafe `a.length` and on unsafe
   lo / hi; every call on the five typed arrays keeps its result and message (parity). `gen.mjs` refuses
   trailing text after the end marker.
+- ABOBS: a failing `bench/ab-gate.mjs --selftest` row printed only the child's last 8 lines, so a red selftest
+  in ab.yml lost the child's RESULT / RAW lines (macOS run 45079558712, the red itself still unexplained). The selftest now
+  replays a failing child's RESULT / RAW / VOID / ORACLE / STOP / CRASH lines from before those 8 lines, then the same 8
+  lines; a first selftest row proves it on a stub output. No verdict, word or threshold changed; no kernel byte changed.
 
 ### Changed
 

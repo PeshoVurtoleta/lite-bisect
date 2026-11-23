@@ -17,6 +17,9 @@
 //  T5 selftest: the 10 injection children (new exit codes + VERDICT line), 3 live-verdict-path children (clean subset,
 //     live-drift, fw-delete-end) and the fixture controls F1-F45 (F12-F45: one control per remaining verdictOf check row, law 9)
 //     as child `--verdict-file` processes on the sha-pinned R4 fixtures bench/ab-fixtures/*.log.
+//  ABOBS (ABDIAG-R1, lab-only observability): a FAILing selftest child replays its RESULT / RAW / VOID / ORACLE / STOP /
+//     CRASH lines from before its last-8-line tail, then that tail unchanged (failReplay); the first selftest row
+//     (`SELFTEST replay: ...`, untimed, no child) proves it on a stub child output.
 //  Plus the path changes this location needs (PKG = one level up) and the gate rule printed in the HEADER (law 10).
 // Kernels are cut by anchor from the FROZEN bench/research/frozen/88e5b1c-10add825/Bisect.js (full sha256 checked) and
 // compiled from it; the live Bisect.js is only compared (T3), never compiled.
@@ -57,7 +60,8 @@
 // process (the handler prints STOP / CRASH, then `VERDICT NO VERDICT (STOP <reason>) ...` listing any wrong gated word
 // already printed). `--verdict-file` maps the same verdicts the same way (a STOP line inside the log = NO VERDICT 2).
 // `--oracle-only`: 0 = no VOID on a gated lane, 2 = a VOID on a gated lane (no VERDICT line: no clock, no words).
-// `--selftest`: 0 = SELFTEST all ok, 1 = any case FAIL (a crashed, timed-out or never-run case is a FAIL).
+// `--selftest`: 0 = SELFTEST all ok, 1 = any case FAIL (a crashed, timed-out or never-run case is a FAIL); a FAILing
+// child case prints its RESULT / RAW / VOID / ORACLE / STOP / CRASH lines from before its last 8 lines, then those 8 lines (ABOBS).
 // VOID markers (per lane): SLOW-DEAD, AA-DRIFT, NOT-TF, ALLOC, GC-WINDOW, NAN, STREAM; a VOID lane is never quoted.
 //
 // Words (INTAKE): SLOWER = median > 1.05 and q1 > 1; FASTER = median < 0.95 and q3 < 1; else WITHIN. Ratio = B / A per round.
@@ -1143,6 +1147,16 @@ function child(args, env, input) {
     const vs = out.split('\n').filter((l) => l.startsWith('VERDICT '));
     return { status: r.status, out, vline: vs.length === 1 ? vs[0] : null, nV: vs.length };
 }
+// ABOBS: a FAILing child's RESULT / RAW / VOID / ORACLE / STOP / CRASH lines from BEFORE its last-8-line tail (as printed,
+// in order), then that tail as ONE string, byte-identical to the pre-ABOBS replay. No cap: a one-lane child prints O(1)
+// such lines per lane, and child() bounds its output at maxBuffer. row() only say()s what this returns.
+const REPLAY_RE = /^(RESULT|RAW|VOID|ORACLE|STOP|CRASH) /;
+function failReplay(out) {
+    const lines = out.split('\n');
+    const keep = lines.slice(0, -8).filter((l) => REPLAY_RE.test(l));
+    keep.push(lines.slice(-8).join('\n'));
+    return keep;
+}
 function envWith(inject) {
     const env = { ...process.env };
     delete env.LAB_INJECT;
@@ -1151,8 +1165,19 @@ function envWith(inject) {
 }
 function selftest() {
     let bad = 0, ran = 0;
-    const total = FIXTURE_CASES.length + SELFTEST_CASES.length;
-    const row = (ok, txt, out) => { ran++; say('SELFTEST ' + txt + ' -> ' + (ok ? 'ok' : 'FAIL')); if (!ok) { bad++; if (out) say(out.split('\n').slice(-8).join('\n')); } };
+    const total = 1 + FIXTURE_CASES.length + SELFTEST_CASES.length;
+    // T2 (ABOBS): fixture --verdict-file children share failReplay: they print only VERDICT-FILE / REPORTED / VERDICT (or STOP / CRASH + VERDICT) lines, so it adds nothing unless a CRASH stack pushes the CRASH line out of the tail
+    const row = (ok, txt, out) => { ran++; say('SELFTEST ' + txt + ' -> ' + (ok ? 'ok' : 'FAIL')); if (!ok) { bad++; if (out) for (const t of failReplay(out)) say(t); } };
+    // ABOBS proof row, untimed, FIRST (no child has spawned yet): a stub child output through the same failReplay row() uses
+    const stub = ['HEADER rung=AB2 TIMED (stub)', 'ORACLE lane=fw:128 (stub)', 'RESULT lane=fw:128 (gated) B/A=1.249[1.247..1.250] word=SLOWER (stub)',
+        'RAW lane=fw:128 B/A=1.2201,1.2472,1.2491 (stub)', 'VOID AA-DRIFT lane=fw:128: AA-DRIFT 1.080[1.070..1.090] (stub)', 'PROV end, a mid-line RESULT is not replayed (stub)',
+        'CRASH Error: stub (stub)', 'STOP STUB: the last line before the tail (stub)', 'RESULT lane=ro:16 the first tail line (stub)'];
+    for (let i = 0; i < 5; i++) stub.push('filler ' + i + ' (stub)');
+    stub.push('VERDICT NO VERDICT (stub)', '');
+    const stubOut = stub.join('\n'), got = failReplay(stubOut), stubTail = stub.slice(-8).join('\n');
+    const wantPre = [stub[1], stub[2], stub[3], stub[4], stub[6], stub[7]];   // ORACLE, RESULT, RAW, VOID, CRASH, STOP in order (stub[7] = last line before the tail); HEADER / PROV / filler / the tail's RESULT are not replayed
+    const okReplay = stub.length - 3 > 8 && got.length === wantPre.length + 1 && wantPre.every((l, i) => got[i] === l) && got[got.length - 1] === stubTail && String(row).includes('if (out) for (const t of failReplay(out)) say(t);');
+    row(okReplay, 'replay: a failing timed child\'s RESULT / RAW lines ' + (stub.length - 2) + ' / ' + (stub.length - 3) + ' lines from the end (and its ORACLE / VOID lines) are replayed, then its last-8 tail unchanged', stubOut);
     // (c) fixtures, untimed: sha-pinned, then each control through a child --verdict-file process (the real exit mapping)
     const fx = {};
     for (const k of Object.keys(FIXTURES)) {
