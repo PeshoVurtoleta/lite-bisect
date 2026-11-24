@@ -221,7 +221,7 @@ prior-art pass, R-12, Q-GUARD, and the section 6 / 7 / 9 additions marked "(lite
 
 ## 5a. P0 PROPOSAL rulings (maintainer, 2026-11-10, one AskUserQuestion sitting)
 
-The PROPOSAL (`.handoff/PROPOSAL-bisect.md`, gitignored) is the first planner pass's input. Its rulings, quoted:
+The PROPOSAL (`.handoff/archive/1.0.0/PROPOSAL-bisect.md`, gitignored) is the first planner pass's input. Its rulings, quoted:
 
 | Q-id | Ruling | Means |
 |---|---|---|
@@ -318,7 +318,7 @@ every %-call's misuse behaviour). Class 2 -- the flag with no refusal (a run wit
 retention: fail-open, unlike AU-R5a's tier flag); settle-until-stable (timing-dependent); serializing the controls
 file only (mitigation; the clean gate still flakes); widening the floor (offered in the triage, not asked).
 
-## 5f. P3 A/B PROPOSAL rulings (maintainer, 2026-11-12, one AskUserQuestion sitting; .handoff/PROPOSAL-ab.md section 5)
+## 5f. P3 A/B PROPOSAL rulings (maintainer, 2026-11-12, one AskUserQuestion sitting; .handoff/archive/1.0.0/PROPOSAL-ab.md section 5)
 
 | Q-id | Answer (quoted) | Effect |
 |---|---|---|
@@ -382,9 +382,14 @@ maintainer commits and pushes 2b, ONE green scheduled nightly.yml run on that co
 step 3 (ab.yml) and step 4 (/release 1.0.0). Also ci.yml run 45064201750 on 0192872 (2a): all 11 jobs green (gates legs
 20:03-20:07Z ubuntu, 20:03-20:08Z macos).
 
+NF-R2 MET 2026-11-23: scheduled nightly.yml run 45203373228 on 4f36e9f (1.0.0, a descendant of bc425e6), conclusion
+success, all 5 legs success (ubuntu node 22 / latest, macos node 22 / latest, coverage + size; 2026-11-23T15:16Z..15:38Z).
+1.0.0 released 2026-11-23: tag v1.0.0 on 4f36e9f, `npm publish --access public` (npm latest = 1.0.0, read
+2026-11-23T23:48Z, .handoff/closeout/npm-view.log).
+
 ## 5i. Audit 2026-11-22 (neon) rulings (maintainer, 2026-11-22, one AskUserQuestion sitting after UNIT 1)
 
-Trigger: independent audit "neon" (audit/2026-11-22/neon/, gitignored), 8 findings on cf1b677. UNIT 1 confirmed 8 / 8
+Trigger: independent audit "neon" (.handoff/archive/1.0.0/audit/2026-11-22/neon/, gitignored), 8 findings on cf1b677. UNIT 1 confirmed 8 / 8
 on HEAD through each gate's real verdict path (.handoff/audit-neon/CONFIRMATION.md; neon-1..4 fail open, class 1;
 neon-5..7 class 2; neon-8 class 3). Fixes are release-blocking (maintainer: "confirm and fix before the release").
 Quoted:
@@ -395,6 +400,33 @@ Quoted:
 | NEON-R2 | neon-7: README / llms.txt point to "the source repository"; package.json has none | "Add repository (Recommended)" | package.json "repository": {"type":"git","url":"https://github.com/PeshoVurtoleta/lite-bisect.git"}; a docs-test row: a shipped doc with the pointer sentence requires pkg.repository |
 | NEON-R3 | neon-8: assertRange accepts {length:'5'} and {length:Infinity}, lo = hi = 1e20 | "Tighten assertRange (Recommended)" | typeof n === 'number' and Number.isSafeInteger on n, lo, hi (cold path, outside the generated kernels; AB-G2 kernel bytes unchanged), parity note + must-fail rows |
 | NF-R3 | (carried from NIGHTFAIL 2b) an unflagged + undrained must-fail retain control | "Keep NO VERDICT (as ruled)" | no change: UNDRAINED, exit 2 |
+
+## 5j. segmentHint / upperBoundHint PROPOSAL rulings (maintainer, 2026-11-23; .handoff/PROPOSAL-seghint.md sections 5 + 6)
+
+Research burst `seghint` (8a item 11; LEDGER C13; RESEARCH section 4). SH-R1..SH-R8: two AskUserQuestion calls by the
+orchestrator session (PROPOSAL section 5); SH-R9: one AskUserQuestion in the research session (section 6). Every Q-id
+took its recommended option. Ruling text = the PROPOSAL's option text; labels quoted:
+
+| Id | Question | Ruling | Means |
+|---|---|---|---|
+| SH-R1 | Q-SH-SURFACE | "Both, 10 exports (Recommended)" | `upperBoundHint<T>` and `segmentHint<T>` for the 5 types; segment is a 31 B wrapper, like `segment<T>` over `upperBoundBranchless<T>`; contingent on the R2 kill rule (passed, SH-R4) |
+| SH-R2 | Q-SH-BODY | "V-1TAIL, 214 B (Recommended)" | one tail site, 214 B (today's lowerBoundHint is 228 B); 2 of 3 channels inlined on the R1 harness where the mirror and today's lowerBoundHint got 1 (traced, mechanism unverified) |
+| SH-R3 | Q-SH-HINT | "Previous segment (Recommended)" | s = the previous SEGMENT result (lo - 1 .. hi - 1); the kernel passes s + 1 to the upper body; NaN s -> as s = lo - 1; s outside [lo - 1, hi - 1] clamped |
+| SH-R4 | Q-SH-GATE | "R2+R3 strict hold (Recommended)" | one `quiet-lock run --strict` hold of r2-ab.mjs; amended kill rule (B1 FASTER than W on >= 1 coherent cell, same cell again in the re-run). PASSED 2026-11-23: 19 / 25 cells (REPORTED) |
+| SH-R5 | Q-SH-LBH | "Leave it (Recommended)" | no one-tail rewrite of lowerBoundHint in this program; judged with 8a item 10 under AB-G2 |
+| SH-R6 | Q-SH-CAP | "No cap (Recommended)" | no gallop step cap; revisit only if R3 shows V-CAP64 FASTER on walk64 / walkN8 without a coherent-lane loss (left out of the SH-R9 hold by ruling) |
+| SH-R7 | Q-SH-TYPES | "All five (Recommended)" | F64, F32, U32, U16, I32, generated like every family; the inline pin must cover every type (R1 traced F64 (+ I32 mirror) only) |
+| SH-R8 | Q-SH-TRIGGER | "Keep 8a trigger (Recommended)" | the 1.1 release waits on 8a item 11's trigger (1.0 on npm AND a P2 consumer whose own A/B shows the lookup matters); research and planner may run before |
+| SH-R9 | Q-SH-BODY2 | "Measure first (Recommended)" | one more strict-hold rung (direct V-FAST / V-1TAIL column, 2- and 3-lookup lanes, run twice); V-FAST replaces V-1TAIL only if all three clauses hold |
+
+Relayed with SH-R9 (2026-11-23): hold "Run it now (Recommended)"; clause (1) "coherent cell" = "1-lookup lanes only
+(Recommended)"; V-CAP64 in the hold = "Leave it out (Recommended)".
+
+SH-R9 verdict (strict hold 2026-11-23T07:48:49Z-07:58:47Z (UTC), QUIET, exit 0, 0 VOID, 0 STOP; REPORTED; r9-apply.mjs
+048f3f18 -> "SH-R9: SH-R2 STANDS (V-1TAIL)"): clause (1) MET (V-FAST / V-1TAIL FASTER on 15 / 25 one-lookup cells in
+both runs, 0.71 .. 0.91); clause (2) NOT MET (SLOWER 1.06 .. 1.58 on 37 / 50 multi-lookup cells in both runs); clause
+(3) NOT MET (V-FAST B/op tier above V-1TAIL on 36 / 50). The 1.1 body is V-1TAIL; no cap. Planner GATE met; the planner
+input is PROPOSAL-seghint sections 5 + 6 and research/seghint/PROGRESS.md (R2 / R3 + SH-R9; R0 / R1 for the oracle and inline-pin TASKS).
 
 ## 6. Verification plan, by tier
 
@@ -467,7 +499,7 @@ PR) and `nightly.yml` (daily), DETERMINISTIC tier only. The sketch below stays a
   high, Fable 5.2 high) + orchestrator spot-check of every reproduction. Session B: each
   finding cross-checked by the other model, maintainer rulings in one sitting, fixes through
   the pipeline (each reproduction becomes a test that fails on the audited build), then every
-  reproduction re-run on the candidate. Untimed. Plan: `.handoff/PLAN-final-audit.md`.
+  reproduction re-run on the candidate. Untimed. Plan: `.handoff/archive/1.0.0/PLAN-final-audit.md`.
 - **P2 adoption, one package at a time, highest value first:**
   - LogN SortedArray / MergeSortTree / WaveletTree (9 sites, Float64Array, mostly reads);
   - then the per-frame sites (Keyframe, MotionPath, Scrollforge, Virtual) if R-2 wins.
@@ -489,6 +521,8 @@ PR) and `nightly.yml` (daily), DETERMINISTIC tier only. The sketch below stays a
     (Apple M1 (Virtual)) both `VERDICT PASS gated=13/13 clean, every word as expected`. The
     two later dispatches gave no verdict: 45079558712 (macOS selftest control, LEDGER B18) and
     45087568692 (A/A drift on both OS, LEDGER B19). Evidence: .handoff/rejudge/REJUDGE.md.
+  - Released 2026-11-23: NF-R2 MET on scheduled nightly 45203373228 (section 5h); 1.0.0 tagged v1.0.0 on
+    4f36e9f and published (npm latest = 1.0.0, .handoff/closeout/npm-view.log).
 
 The likely outcome to plan for: the main value is ONE tested set of kernels with one contract
 replacing ~28 copies; speed wins are per site and must be shown per site.
@@ -620,6 +654,12 @@ release, once the A/B result (P3-R1) is known. Each item names its trigger and w
      Provenance: PRELIMINARY: one Apple M4 Pro (darwin arm64), node v26.8.2 / V8 14.6.202.34-node.28, host load up to 9.07, no quiet lock; harness written by the audit and NOT reviewed here (law 11: its numbers are leads until a reviewed probe re-runs them); x86 unmeasured (law 7).
 9. **After the release.** MOVE (never delete) finished specs, `audit/`, `.handoff/frozen/` and the review
    overlays into `.handoff/archive/1.0.0/` (ORCHESTRATOR "STATE"); rotate HISTORY.md past ~50K chars.
+   **DONE 2026-11-24:** moved, relative paths kept: 41 review-overlay dirs, rejected/D-docs, PLAN-final-audit /
+   PROPOSAL-ab / PROPOSAL-bisect / P1-BRIEF-common, 25 old COMMIT_MSG files and `audit/` except
+   audit/2026-11-11-bisect/ (README cites its cross-fable/cross-repro.mjs; move it when a README change re-cites it).
+   `.handoff/frozen/` stays: test/fixtures/golden-f64.json names .handoff/frozen/87389fb-3af35dca (AB-G2 reads the
+   tracked copy bench/research/frozen/88e5b1c-10add825, bench/ab-gate.mjs:79). HISTORY.md is 38,000 chars: not rotated.
+   Citations of moved paths were updated (LEDGER, ROADMAP, RESEARCH).
 10. **The 99 B branchless kernel (bl1_99; audit neon 2026-11-22; PRELIMINARY; RESEARCH-DEEP (neon, 2026-11-22)
     sections 1, 2).** Drops `let b = lo;`, keeps the exact `(0 - ((a[lo + h] < x) | 0)) & h` bitmask: 103 -> 99 B,
     under Maglev's 100 B cap. Measured: Maglev (--no-turbofan) 16.0000 -> 0.0000 B/op on lowerBound F64 / F32 /
@@ -644,6 +684,8 @@ release, once the A/B result (P3-R1) is known. Each item names its trigger and w
     Scrollforge) as wanting segment / upperBound semantics, not lowerBound alone. The README:241 footgun (it
     points a segment user at lowerBoundHintF64) is being fixed in words in this burst (BIS-neon-7); the new
     functions are not. Trigger: 1.0 on npm and a P2 consumer (item 1) whose own A/B shows the lookup matters.
+    **Status 2026-11-24:** research burst `seghint` complete (LEDGER C13, RESEARCH section 4, rulings section 5j):
+    V-1TAIL body, 10 exports, no cap. The 1.1 planner pass may run now; the release still waits on this trigger (SH-R8).
     Provenance: PRELIMINARY: one Apple M4 Pro (darwin arm64), node v26.8.2 / V8 14.6.202.34-node.28, host load up to 9.07, no quiet lock; harness written by the audit and NOT reviewed here (law 11: its numbers are leads until a reviewed probe re-runs them); x86 unmeasured (law 7).
 12. **The 96 B integer nearest (U32 / U16 / I32; audit neon 2026-11-22; PRELIMINARY; RESEARCH-DEEP (neon,
     2026-11-22) section 5.3).** Claim: for 32-bit integers |p + q| <= 2^33 - 2 < 2^53, so (a[i - 1] + a[i]) * 0.5

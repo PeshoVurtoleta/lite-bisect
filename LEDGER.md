@@ -25,6 +25,9 @@ number from them is never quoted as this package's number.
 - Sources: `git log`, ROADMAP.md, `draft-check.mjs`, `.handoff/` (gitignored, once it exists), and the
   ledgers and RESEARCH.md of LiteLogLogN, LiteSignal and LiteFastBit32 under
   `/Users/zakkster/Work/Portfolio/LiteLibrariesSuite/`.
+- Archive (2026-11-24, after 1.0.0): finished specs, review overlays, old commit messages and `audit/` (except
+  audit/2026-11-11-bisect/, which README cites) were moved to
+  `.handoff/archive/1.0.0/` with their relative paths kept; citations of moved paths name the archive path.
 - Tiers: DETERMINISTIC gates run in `npm test` / `npm run verify` every time; STATISTICAL
   gates run once per release, interleaved A/B on hosted CI; REPORTED numbers gate nothing.
 
@@ -192,14 +195,14 @@ on these kernels. No single green gate authorises a release.
   behaviour, against `sideEffects: false`; runtime timing makes results depend on the host.
 - **Status:** RULED with Q-R11 (maintainer, 2026-11-10): "(a) No selector at 1.0
   (Recommended)", whose text refuses A3 under every option.
-- **Evidence:** .handoff/PROPOSAL-bisect.md Q-R11; ROADMAP R-11 "Declined in advance"; laws 2, 3.
+- **Evidence:** .handoff/archive/1.0.0/PROPOSAL-bisect.md Q-R11; ROADMAP R-11 "Declined in advance"; laws 2, 3.
 - **Reopens with:** a mechanism that keeps the call site monomorphic and inlined with a
   per-call choice, traced (law 3).
 
 ### A4. The length switch (`lowerBound`, `LINEAR_MAX`) and `lowerBoundLinear` *(REFUSED 2026-11-10, Q-KERNELS)*
 - **Reason:** C4. The switch never read FASTER and read SLOWER at every n = 1..8; no measured
   case has linear beating branchless. Ruling: "(a) Lean set (Recommended)".
-- **Evidence:** `.handoff/PROPOSAL-bisect.md` Q-KERNELS; LEDGER C4.
+- **Evidence:** `.handoff/archive/1.0.0/PROPOSAL-bisect.md` Q-KERNELS; LEDGER C4.
 - **Reopens with:** C4's reopen conditions (an x86 win with no loss, or a predictable caller
   stream measured at that caller).
 
@@ -216,7 +219,7 @@ on these kernels. No single green gate authorises a release.
 
 ### A6. Eytzinger at 1.0 *(PARKED 2026-11-10, Q-KERNELS)*
 - **Reason:** never measured on this package (R-5); the inherited win is PRELIMINARY and in L1.
-- **Evidence:** .handoff/PROPOSAL-bisect.md Q-KERNELS; ROADMAP section 3 row 16.1 S0 (PRELIMINARY, in L1); R-5.
+- **Evidence:** .handoff/archive/1.0.0/PROPOSAL-bisect.md Q-KERNELS; ROADMAP section 3 row 16.1 S0 (PRELIMINARY, in L1); R-5.
 - **Reopens with:** an R-5 rung (n >= 1e5, kill rule fixed before the run).
 
 ### A7. CI shapes not chosen for the hosted workflows *(RULED 2026-11-11, P3-R2..P3-R8)*
@@ -459,7 +462,7 @@ on these kernels. No single green gate authorises a release.
   `Number(s)` an empty gated bop cell parsed as 0 and read PASS (null is not zero).
 - **Root cause:** the B5 / B7 shape a fourth time: a control whose expected outcome is also the outcome of the broken
   path (NO VERDICT is the default) proves nothing about the path; and "one control per row" was asserted, not listed.
-- **Evidence:** .handoff/p3/BRIEF-abgate*.md; overlays .handoff/p3/overlay-abgate{,-r2,-r3}; fix: the clean child must
+- **Evidence:** .handoff/p3/BRIEF-abgate*.md; overlays .handoff/archive/1.0.0/p3/overlay-abgate{,-r2,-r3}; fix: the clean child must
   name its three reasons (rung, K, 22 missing lanes), fixture rows F29-F36 each killing its own mutant alone (untimed).
 - **Law:** 9 (none new).
 - **Gate:** `node bench/ab-gate.mjs --selftest` (ab.yml STOP gate), 47 fixture rows (2 sha pins + F1-F45) + 13 timed children. Reopens with: a
@@ -474,7 +477,7 @@ on these kernels. No single green gate authorises a release.
   then passed: nothing fed that line).
 - **Root cause:** the B5 / B7 / B13 shape a fifth time: each branch is a conjunction (exit AND words), and the table
   planted a miss of only one conjunct per branch; the row's last comparison sat outside the shared decision code.
-- **Evidence:** .handoff/clate3/overlay-r1, overlay-r2, evidence/gates-local-r2.txt; fix: 6 pairs (58 in all), and
+- **Evidence:** .handoff/archive/1.0.0/clate3/overlay-r1, overlay-r2, .handoff/clate3/evidence/gates-local-r2.txt; fix: 6 pairs (58 in all), and
   the row decides only through the exported lateGateRow, which throws `<verdict>: ...` unless ok and is fed every
   planted pair. Revert check: the old logic as the decision reads 40 of 58 pairs wrong.
 - **Law:** 9 (none new): a conjunction needs a control per conjunct.
@@ -506,7 +509,7 @@ on these kernels. No single green gate authorises a release.
 - **Gate:** `npm test` (test/lu.test.mjs). Reopens with: an edit to luVersionOk or the env / installed order that no row
   of test/lu.test.mjs fails.
 
-### B16. A 200 ms settle() timeout failed an unplanted torture lane with every count zero *(FOUND 2026-11-22, nightly run 45024298534; RULED NF-R1 "Re-settle, then NO VERDICT (Recommended)", NF-R2 "Fix + 1 green nightly (Recommended)"; FIXED 2026-11-22, UNIT 2b; NF-R2 nightly pending (ROADMAP 5h))*
+### B16. A 200 ms settle() timeout failed an unplanted torture lane with every count zero *(FOUND 2026-11-22, nightly run 45024298534; RULED NF-R1 "Re-settle, then NO VERDICT (Recommended)", NF-R2 "Fix + 1 green nightly (Recommended)"; FIXED 2026-11-22, UNIT 2b; NF-R2 MET 2026-11-23, scheduled nightly 45203373228 (ROADMAP 5h))*
 - **What happened:** nightly.yml run 45024298534 (2026-11-22T12:49Z, commit 1d797ce), leg `nightly (macos-latest, node
   latest)` (node v27.0.0-alpha.0.1.1, image macos-26-arm64 20261117.0516; the same node and image were green in run
   44906461931 the day before): torture control (b) saw the planted lane fail AND `LANE lowerBoundHintI32 major=0
@@ -559,8 +562,10 @@ on these kernels. No single green gate authorises a release.
   undrained lane after the 2000 ms re-settle on an idle host. Open (not ruled): CONTROL-retain's flag reads heap
   samples taken before settle, so an unflagged + undrained retain control reads UNDRAINED (NO VERDICT) per the spec
   where FAIL would be stronger; fail-closed either way. RULED 2026-11-22: NF-R3 "Keep NO VERDICT (as ruled)" (ROADMAP 5i).
+  Status 2026-11-23: NF-R2 MET by scheduled nightly.yml run 45203373228 on 4f36e9f (1.0.0, a descendant of bc425e6),
+  conclusion success, all 5 legs success (2026-11-23T15:16Z..15:38Z); 1.0.0 released 2026-11-23 (tag v1.0.0).
 
-### B17. Four gates failed open on forged or out-of-domain input; one oracle had no infinity *(FOUND 2026-11-22, independent audit "neon"; CONFIRMED 8 / 8 on cf1b677; RULED NEON-R1..R3; FIXED (committed c883d19 / 08d45c6 / 46efea9 / bc425e6; docs D <pending>))*
+### B17. Four gates failed open on forged or out-of-domain input; one oracle had no infinity *(FOUND 2026-11-22, independent audit "neon"; CONFIRMED 8 / 8 on cf1b677; RULED NEON-R1..R3; FIXED (committed c883d19 / 08d45c6 / 46efea9 / bc425e6; docs D 8eb9bf8))*
 - **What happened:** (neon-2) `bench/ab-gate.mjs --verdict-file` read exit 0 VERDICT PASS on both pinned R4 fixtures for a
   negative bop cell, NaN aa.q1 / aa.q3 / slow.q3, HEADER NQ2=1 minWindow=1, and a dropped or doubled PROV start line -- the
   ab.yml release verdict. (neon-3) the alloc gate's emptyCheck had no lower bound (judge() null for -0.5 / -5). (neon-4)
@@ -574,7 +579,7 @@ on these kernels. No single green gate authorises a release.
   contract's (finite only). The first control written for a floor (F37 at -99) sat far from it and let a weakened floor live
   (review A r1), the B5 shape again.
 - **Evidence:** .handoff/audit-neon/CONFIRMATION.md + evidence/confirm-head.log (real verdict paths), review-{A,B,C,E}/
-  VERDICT-r*.md, evidence/{A,B,C,E}-*.log. Audit: audit/2026-11-22/neon/REVIEW.md (gitignored).
+  VERDICT-r*.md, evidence/{A,B,C,E}-*.log. Audit: .handoff/archive/1.0.0/audit/2026-11-22/neon/REVIEW.md (gitignored).
 - **Law:** 9 (every conjunct gets a control at its bound, failing on it alone). Equivalent mutants recorded, not gaps:
   au-r1a on F32 and the integer types, inf-gt on the integer types; assertRange's typeof n / safe lo / safe hi conjuncts
   (kept: ruled text, NEON-R3).
@@ -584,51 +589,56 @@ on these kernels. No single green gate authorises a release.
   field read without both bounds; an oracle phase whose values miss part of the documented domain.
 
 ### B18. A red ab.yml selftest row could not be diagnosed: the child's RESULT line was discarded *(FOUND 2026-11-23, ab.yml run 45079558712 macOS; UNEXPLAINED; RULED ABDIAG-R1 "Observability, then re-dispatch (Recommended)"; replay fixed 2026-11-23, unit ABOBS; the re-dispatch 45087568692 read SELFTEST all ok on both OS, so the control did not fail again; cause still UNEXPLAINED)*
-- **What happened:** on the Apple M1 (Virtual) leg, the selftest's must-fail timed control `slow-dead AB2 fw:128` printed no
-  `VOID SLOW-DEAD` (`SELFTEST 1 FAIL`; the gate step was skipped; ubuntu read VERDICT PASS gated=13/13). That K = 3 child read
-  `VOID (AA-DRIFT)` only: an unspinned A-twin passed slowOk (med > 1.25, q1 > 1.10 vs A). The 11-12 dispatch 43145179770
-  passed the same control on both legs.
-- **Root cause:** UNEXPLAINED. The lead "SLOW shares A's block on a lane that mutates it" is DISPROVEN by reading the code:
-  makeCols' `a` is kernel source text (block(), bench/ab-gate.mjs:262 at 8eb9bf8), and every column x copy is a fresh `new Function`
-  with its own `lane.a.slice()` (buildEntry). The noise lead is unproven: K = 3 with column-major entries rotated one step
-  per round keeps each column at nearly the same in-round positions, so one host stall can hit SLOW in 2 of 3 rounds.
-  The defect found: a FAILing timed row replayed only the child's last 8 lines (:1155 at 8eb9bf8). The uploaded logs artifact is a tee
-  of the same stdout, so no CI artifact holds the RESULT / RAW lines.
+- **What happened:** on the Apple M1 (Virtual) leg, the selftest's must-fail timed control `slow-dead AB2 fw:128`
+  printed no `VOID SLOW-DEAD` (`SELFTEST 1 FAIL`; the gate step was skipped; ubuntu read VERDICT PASS gated=13/13). That
+  K = 3 child read `VOID (AA-DRIFT)` only: an unspinned A-twin passed slowOk (med > 1.25, q1 > 1.10 vs A). The 11-12
+  dispatch 43145179770 passed the same control on both legs (.handoff/rejudge/run-43145179770.joblog:310 macOS, :858
+  ubuntu).
+- **Root cause:** UNEXPLAINED. The lead "SLOW shares A's block on a lane that mutates it" is DISPROVEN by reading the
+  code: makeCols' `a` is kernel source text (block(), bench/ab-gate.mjs:262 at 8eb9bf8), and every column x copy is a
+  fresh `new Function` with its own `lane.a.slice()` (buildEntry). The noise lead is unproven: K = 3 with column-major
+  entries rotated one step per round keeps each column at nearly the same in-round positions, so one host stall can hit
+  SLOW in 2 of 3 rounds. The defect found: a FAILing timed row replayed only the child's last 8 lines (:1155 at
+  8eb9bf8). The uploaded logs artifact is a tee of the same stdout, so no CI artifact holds the RESULT / RAW lines.
 - **Evidence:** .handoff/abdiag/DIAG.md; job log .handoff/audit-neon/ab/run-45079558712.log:875-882; local repro
-  .handoff/abdiag/slowdead-fw128-local.txt (PRELIMINARY: Apple M4 Pro, node v26.8.2, load1 11.67 -> 11.91, quiet-lock run,
-  8 children: 8 / 8 VOID SLOW-DEAD, per-round SLOW/A 0.86..1.12, per-round AA up to 1.65 / down to 0.67).
-- **Law:** 9 extended to a failing control. A control that fails must leave the numbers it failed on in the uploaded logs,
-  otherwise its red run is a finding nobody can diagnose.
-- **Gate:** ABOBS (bench/ab-gate.mjs failReplay + selftest row `SELFTEST replay: ...`, run first in every `--selftest`, so
-  in ab.yml's STOP gate): the selftest replays a FAILing child's (timed or fixture) RESULT / RAW / VOID / ORACLE / STOP /
-  CRASH lines from before its last 8 lines, then those 8 lines unchanged. The row is untimed (a stub child output, no
-  spawn) and pins row()'s printing call by its source text (String(row).includes); revert-checked: tail-only, row() back
-  to the 8eb9bf8 tail, the slice boundary +-1, the whole output filtered, each prefix kind, the `^` anchor
+  .handoff/abdiag/slowdead-fw128-local.txt (PRELIMINARY: Apple M4 Pro per DIAG.md, the txt names no CPU; node v26.8.2,
+  load1 11.67 -> 11.91, quiet-lock run, 8 children: 8 / 8 VOID SLOW-DEAD, per-round SLOW/A 0.86..1.12, per-round AA up
+  to 1.65 / down to 0.67).
+- **Law:** 9 (none new; applied to a failing control). A control that fails must leave the numbers it failed on in the
+  uploaded logs, otherwise its red run is a finding nobody can diagnose.
+- **Gate:** ABOBS (bench/ab-gate.mjs failReplay + selftest row `SELFTEST replay: ...`, run first in every `--selftest`,
+  so in ab.yml's STOP gate): the selftest replays a FAILing child's (timed or fixture) RESULT / RAW / VOID / ORACLE /
+  STOP / CRASH lines from before its last 8 lines, then those 8 lines unchanged. The row is untimed (a stub child
+  output, no spawn) and pins row()'s printing call by its source text (String(row).includes); revert-checked: tail-only,
+  row() back to the 8eb9bf8 tail, the slice boundary +-1, the whole output filtered, each prefix kind, the `^` anchor
   (.handoff/abobs/VERDICTS.md). Then ONE ab.yml re-dispatch (ABDIAG-R1).
-  Reopens with: a second red on any selftest control after that fix, read from its replayed lines; or a red selftest whose
-  selftest.log lacks the failing child's RESULT line.
+  Reopens with: a second red on any selftest control after that fix, read from its replayed lines; or a red selftest
+  whose selftest.log lacks the failing child's RESULT line.
   Status 2026-11-23: the re-dispatch 45087568692 (3621f69) read `SELFTEST all ok` on both OS, so neither Reopens
-  condition fired and no replay was printed. The 45079558712 failure stays UNEXPLAINED; the re-dispatch's gate step then gave no verdict
-  for a different reason (B19).
+  condition fired and no replay was printed. The 45079558712 failure stays UNEXPLAINED; the re-dispatch's gate step then
+  gave no verdict for a different reason (B19).
 
 ### B19. Hosted A/A drift voided gated lanes on both OS in the ab.yml re-dispatch *(FOUND 2026-11-23, ab.yml run 45087568692; mechanism PRELIMINARY; RULED AB-G3 "Re-judge Nov 12 run (Recommended)"; P3-R1 MET on 43145179770, ROADMAP 5f / 8)*
-- **What happened:** the one re-dispatch of a NO VERDICT run (Q-AB-K), on 3621f69, node v26.8.2 / V8 14.6.202.34-node.28 on both OS: `SELFTEST all ok` on both OS, then
-  `VERDICT NO VERDICT (gated lane not clean)` on both. ubuntu (AMD EPYC 7763): uni:65536 VOID AA-DRIFT, aa
-  0.941[0.926..0.951], gated-clean=12/13. macOS (Apple M1 (Virtual)): uni:256 aa 1.051[0.762..1.133], walk:65536:1 aa
-  0.945[0.807..1.064], walk:65536:4 aa 1.099[0.953..1.218], ro:65536 aa 0.913[0.906..1.005], all VOID AA-DRIFT,
-  gated-clean=9/13. No clean gated lane read another word (no FINDING). A second NO VERDICT stops for a ruling.
+- **What happened:** the one re-dispatch of a NO VERDICT run (Q-AB-K), on 3621f69, node v26.8.2 / V8 14.6.202.34-node.28
+  on both OS: `SELFTEST all ok` on both OS, then `VERDICT NO VERDICT (gated lane not clean)` on both. ubuntu (AMD EPYC
+  7763): uni:65536 VOID AA-DRIFT, aa 0.941[0.926..0.951], gated-clean=12/13. macOS (Apple M1 (Virtual)): uni:256 aa
+  1.051[0.762..1.133], walk:65536:1 aa 0.945[0.807..1.064], walk:65536:4 aa 1.099[0.953..1.218], ro:65536 aa
+  0.913[0.906..1.005], all VOID AA-DRIFT, gated-clean=9/13. No clean gated lane read another word (no FINDING). A second
+  NO VERDICT stops for a ruling.
 - **Root cause:** hosted-runner noise, PRELIMINARY. The A/A twin times A against itself, so a drift is not a kernel
   result; the gate failed closed as designed. macOS PROV start load1 58.98 (end 11.32) fits; ubuntu PROV start load1
-  1.85 (end 1.09) shows no contention, so noise is not shown there. The run had no quiet host and one run per OS.
+  1.85 (end 1.09) shows no contention, so noise is not shown there: the ubuntu drift is UNEXPLAINED. The run had no
+  quiet host and one run per OS.
 - **Evidence:** `gh run view 45087568692 --log` (saved as .handoff/rejudge/run-45087568692.joblog); the re-judge of
-  43145179770 in .handoff/rejudge/REJUDGE.md (11-12, 679dcad: PASS gated=13/13 on both OS by the 3621f69 gate,
-  log sha256/8 6035afb2 ubuntu, d6cc3927 macOS; the equivalence check found no timing-path change since 679dcad).
+  43145179770 in .handoff/rejudge/REJUDGE.md (11-12, 679dcad: PASS gated=13/13 on both OS by the 3621f69 gate, log
+  sha256/8 6035afb2 ubuntu, d6cc3927 macOS; the equivalence check found no timing-path change since 679dcad).
 - **Law:** 5 (a timing verdict needs its controls and a range, never one run); none new.
 - **Gate:** .github/workflows/ab.yml + bench/ab-gate.mjs (STATISTICAL), unchanged: the A/A control is the gate working.
   Reopens with: a gated lane reading another word (a FINDING) on any later ab.yml dispatch; a timing-path change to
   bench/ab-gate.mjs, ab.yml or the frozen kernels after 3621f69 (the 43145179770 verdict then no longer applies); a
   later A/A drift VOID on a dispatch whose PROV load lines show no contention on either leg (noise would then be the
-  wrong mechanism).
+  wrong mechanism). PROV load1 is the guest's own: hypervisor steal does not show in it, so this clause cannot see
+  contention outside the guest.
 
 ---
 
@@ -849,6 +859,50 @@ on these kernels. No single green gate authorises a release.
 - **Law:** 8. **Gate:** gates:local fracnanhint lane, run B [28, 36] B/op, run A the floor. Reopens with: a V8 that passes
   doubles unboxed across calls (the lane then reads the floor and fails low).
 
+### C13. Hinted upperBound / segment: exact with no extra hot bytes; a one-tail body inlined two channels where the shipped hint got one, and beat the caller's workaround on a playhead; a fast check's caller deopted *(MEASURED 2026-11-23, research burst `seghint` R0 + R1 untimed, R2 / R3 one QUIET strict hold (REPORTED); PROPOSAL-seghint RULED SH-R1..SH-R9, SH-R4 PASSED; SH-R9 hold 2026-11-23 kept V-1TAIL)*
+- **What happened:** ROADMAP 8a item 11 asked for hinted kernels at the segment / upperBound call sites. R0: the
+  lowerBoundHint template with `<` -> `<=` (V-MIRROR) and a one-tail rewrite (V-1TAIL) are exact against a
+  linear-scan oracle on 5 types (2,082,484 calls per lane, 0 fails; NaN x, NaN / out-of-range hints, duplicates,
+  +-Infinity, -0, empty ranges, sub-ranges; 2^30 - 1 range returns). The audit's segHintFast fails 83,015 of them
+  (NaN x: the B1 flipped predicate; NaN hint: never mapped to lo). R1 (TurboFan, frame callers in feedback form,
+  fractional x; traced on the R1 harness: n = 4,096, 45,000 warm calls, forced compile): V-1TAIL is 214 B (+31 B
+  segment wrapper; today's lowerBoundHint is 228 B) and TurboFan inlined 2 of 3 channels where V-MIRROR and today's
+  lowerBoundHint got 1 (c2 15.87, c3 31.71 B/op). The byte sums do not predict this (2 x 434 = 868 < 920): mechanism
+  unverified, so every consumer traces its own caller (law 2). V-1F (268 B, one tail + fast check): its TurboFan caller
+  still deopted ("Insufficient type feedback for binary operation") after a 4-wrap warm-up; V-FAST (282 B) reads the
+  floor at 3 channels (upper form only; the segment form reads 15.88) because its tail call stayed cold and un-inlined (a JIT feedback outcome, not a size).
+  Warm-up Maglev deopts of the same kinds appear in every hinted body, the shipped lowerBoundHint included. Workarounds over the shipped lowerBoundHint: nextUp(x) is exact except
+  x = +Infinity with +Infinity in the range, but costs 635 B per channel and two boxes per non-inlined call;
+  floor(x) + 1 is exact on integer types; the "i, or i - 1 when a[i] !== x" shortcut is wrong with duplicates.
+  R2 / R3 (one `quiet-lock run --strict` hold, QUIET, R2 x 2 + R3 x 1, K = 11, C = 3, feedback form, F64): V-1TAIL's
+  segmentHint FASTER than the nextUp workaround over lowerBoundHint on 19 of 25 coherent cells in both runs (B1/W
+  0.81 .. 0.88 on every playhead cell; walk1 / walk4 split FASTER / WITHIN), WITHIN it on 13 of 15 incoherent cells;
+  on uni, walkN8 (n >= 256) and walk64 (n <= 4,096) both cost more than plain segment (B1 1.35 .. 3.11x, W 1.33 ..
+  3.10x: the shipped hint's cost class). On one channel per frame function the
+  fast-check body V-FAST read lower still (BF/W 0.60 .. 0.78 on play8 / play2 / walk1; WITHIN on play_2 at n >= 256),
+  with no direct BF/B1 column and no multi-channel lane: ruled SH-R9 = measure first. The SH-R9 hold (one QUIET
+  strict hold, R2 at 1 / 2 / 3 lookups per frame, run twice) kept V-1TAIL: BF/B1 FASTER 0.71 .. 0.91 on play8 /
+  play2 / walk1 at one lookup (SLOWER on play_2 at n <= 65,536), but SLOWER 1.06 .. 1.58 on 37 of 50 cells at 2 / 3 lookups in both
+  runs; V-FAST's B/op tier (read as one more call site un-inlined) was above V-1TAIL's on 36 of 50 cells, 33 of them SLOWER (play_2 at n >= 65,536 is SLOWER at equal tier); V-1TAIL beat W on
+  all 100 multi-lookup run-cells (0.50 .. 0.80).
+- **Reason:** the cumulative TurboFan budget (920 B) is charged per inlined body and inner site (law 2), but the
+  traced counts are not the plain byte sums (the trace also counts "existing opt code's inlined bytecode size"): the
+  exact accounting is unverified. A fast check returns before code that then collects feedback later, so a path can
+  stay cold past the warm-up and deopt the compiled caller when first reached.
+- **Measurement trap (audit harness):** a hint lane fed from a PRECOMPUTED hint array has no loop-carried dependency,
+  so it measures throughput where a consumer (`h = f(..., h)`) pays latency, and a hinted kernel compared with the
+  NON-hinted one re-measures C5's hint-vs-no-hint trade, not the new kernel against what a caller can already write.
+  Every seghint lane runs in feedback form with the workaround as the baseline.
+- **Evidence:** .handoff/research/seghint/PROGRESS.md (INTAKE, R0, R1, R2 / R3 strict hold, SH-R9 strict hold), logs/r2-1.log, logs/r2-2.log,
+  logs/r3.log (2026-11-23T00:55:07Z-00:59:05Z (UTC), load1 1.90 -> 1.24, QUIET; REPORTED), logs/r2-inject.log, logs/r9-1.log, logs/r9-2.log, logs/hold-r9.log (SH-R9, 2026-11-23T07:48:49Z-07:58:47Z (UTC), load1 2.28 .. 4.47, QUIET; REPORTED; r9-ab.mjs 32f9527f, r9-apply.mjs 048f3f18), logs/r0.log, logs/r1.log (2026-11-22T22:59:05Z-22:59:15Z
+  (UTC), load1 2.38 -> 5.27 per its PROV lines), logs/r1-deopt.log; probes cand.template.js, r0-oracle.mjs, r1-inline.mjs over the frozen build 2352ccf /
+  9a591998; node v26.8.2 / V8 14.6.202.34-node.28, Apple M4 Pro. R0 / R1 untimed (DETERMINISTIC on that engine, not
+  gated); R2 / R3 and SH-R9 REPORTED (two local QUIET holds; x86 not run, law 7).
+- **Law:** 2, 4, 8, 9 (none new). **Gate:** none yet (a planner pass after the PROPOSAL handshake turns R0 / R1 into
+  node:test rows: oracle + mutants, bytecode budget, inline pin with a 2-channel caller).
+  Reopens with: an explanation of the traced budget accounting, a consumer whose own A/B shows one lookup per frame function on play8 / play2 / walk1-like streams (V-FAST), an x86 run, a V8 that changes the cumulative budget or inlines cold calls,
+  or a consumer trace with >= 3 channels in one frame function.
+
 ---
 
 ## D. Process lessons
@@ -905,6 +959,17 @@ on these kernels. No single green gate authorises a release.
   of a synchronous runner is isolated by a preload that stubs spawnSync (exit at the first `--rung` child), never by a pipe.
 - **Evidence:** .handoff/abobs/VERDICTS.md (doc review r3 repro); the spawn guards .handoff/abobs/block-all.mjs /
   block-timed.mjs. **Gate:** none (process).
+
+### D6. A strict hold was refused NOISY by the session's own untimed run seconds earlier *(FOUND 2026-11-23, research burst `seghint`, SH-R9)*
+- **What happened:** the first SH-R9 `quiet-lock run --strict` attempt exited 76 (NOISY HOST) at 2026-11-23T03:24:25Z
+  (UTC): load1 4.62 came from the same session's untimed smoke run just before it, not from another process.
+- **Root cause:** load1 is a 1-minute moving average; an untimed run that ends seconds before a strict hold still
+  counts against the BASELINE + 1 rule.
+- **Law:** none new (the quiet-host rule). Lesson: idle the host ~2 minutes after any local run before a strict hold
+  (done for the run that counted, 07:48:49Z).
+- **Evidence:** .handoff/research/seghint/logs/hold-r9.log (the 76 attempt, then the run); PROGRESS.md:424 (the smoke
+  run PROV end 03:24:17Z) and :434 (the 120 s idle window before the run that counted); PROPOSAL-seghint section 6.
+  **Gate:** none (process).
 
 ## Not yet covered
 

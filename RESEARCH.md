@@ -101,7 +101,7 @@ twin, must-fail SLOW control, B/op lane; selftest 10 / 10 markers. Apple M4 Pro,
   the A/A twin (4 of 5 runs) and the lab reports NO VERDICT, never a wrong high-margin word. Four low-margin lanes
   (walk:256:1, walk:4096:4, fw:1024, fw:2048) move with load; the PROPOSAL keeps them REPORTED, not gated
   (Q-AB-LANES; LEDGER A8 refuses only the contended shape).
-- Open, in `.handoff/PROPOSAL-ab.md`: where the release run lives, which lanes gate, K, the A/A band, I1's tier, the
+- Open, in `.handoff/archive/1.0.0/PROPOSAL-ab.md`: where the release run lives, which lanes gate, K, the A/A band, I1's tier, the
   README "When" wording per CPU, the large-n scope. All seven were ruled 2026-11-12 (PROPOSAL-ab section 5); the hosted run (R4) is section 3.
 
 ## 3. P3 unit R4 (2026-11-12): the same lab on hosted x86 + arm64 (REPORTED; LEDGER C11)
@@ -116,3 +116,43 @@ macos-latest = "Apple M1 (Virtual)" arm64 (3 vCPU, 128 B lines, 16 KB pages, boo
 - The arm64 VM VOIDed two non-gated lanes (A/A drift, coinciding with boot-time load); the VOID on the kill-rule
   lane walk:256:1 made the R0 lab exit 2 (a report-lane VOID leaves the exit alone); the gate unit's lab must
   scope its verdict to the gated lanes. Hosted numbers are REPORTED (no quiet lock, one run per OS, runner CPUs vary).
+
+## 4. Research burst `seghint` (2026-11-23): hinted upperBound / segment kernels (untimed R0 + R1, one strict-hold R2 / R3; LEDGER C13; PROPOSAL-seghint)
+
+Question (ROADMAP 8a item 11): should 1.1 add hinted kernels for the per-frame call sites that want segment or
+upperBound (Keyframe, Scrollforge, Chartforge: segment; MotionPath, Virtual: upper; ROADMAP section 2)? Lead: audit
+neon RESEARCH-DEEP 5.2 (segHintFast; PRELIMINARY, unreviewed harness). Probes and logs: .handoff/research/seghint/.
+
+### 4.1 R0 semantics (untimed)
+Five candidate upper bodies (mirror of the lowerBoundHint template; one tail; explicit fast check; fast check + one
+tail; step cap 64) and their segment wrappers (`upperBoundHint(..., s + 1) - 1`) are exact against an independent
+linear-scan oracle on all five types: 2,082,484 calls per lane, 0 fails, 0 out-of-range reads on the Proxy lanes; planted mutants
+caught. The audit's segHintFast is not exact (NaN query and NaN hint: 83,015 fails). B2's cap covers the new
+gallops; B3's fractional-hint hang reproduces on every variant (caller error, as for lowerBoundHint).
+
+### 4.2 R1 bytes and inlining (untimed, node v26.8.2)
+One-tail upperBoundHint 214 B (+31 B segment wrapper) vs mirror 232 B (2 tail sites) and today's lowerBoundHint 228 B.
+In a frame function with k channels (feedback form, fractional x; traced on the R1 harness, mechanism unverified --
+the byte sums do not predict it): one-tail got 2 channels inlined, the mirror and today's lowerBoundHint 1 (15.87
+B/op per extra channel); today's segment 3. Maglev inlines no hinted body (> 100 B). The one-tail + fast-check body's
+TurboFan caller deopted after a 4-wrap warm-up (a gallop path still without feedback).
+
+### 4.3 R2 / R3 timing
+One `quiet-lock run --strict` hold, 2026-11-23T00:55-00:59Z (UTC), node v26.8.2, Apple M4 Pro, QUIET (load1 1.90 -> 1.24), REPORTED: R2 x 2 +
+R3 x 1. Probe r2-ab.mjs: A = segment, W = the caller's nextUp workaround over lowerBoundHint (the honest baseline),
+B = candidates, feedback form, C = 3, K = 11, A/A + SLOW + TF + B/op + SCAV + fold controls; a planted wrong
+candidate (`--inject`) STOPs the oracle on 34 of 40 lanes (correct on the other 6: play_2 at every n, uni:65659). 0 VOID cells.
+Coherent (R2): the one-tail segmentHint is FASTER than W on 19 of 25 cells in both runs (0.81 .. 0.88 on every
+playhead cell; +-1 / +-4 walks split FASTER / WITHIN), passing the amended kill rule. Incoherent (R3): WITHIN W on
+13 of 15 cells; on uni, walkN8 (n >= 256) and walk64 (n <= 4,096) both cost more than plain segment (one-tail
+1.35 .. 3.11x, W 1.33 .. 3.10x), the shipped hint's cost class. The fast-check body read
+lower on one channel (W ratio 0.60 .. 0.78 on play8 / play2 / walk1); a second QUIET strict hold (SH-R9, 2026-11-23T07:48-07:58Z (UTC), REPORTED, R2 at 1 /
+2 / 3 lookups per frame, twice) measured it against the one-tail body directly: fast-check / one-tail 0.71 .. 0.91 on
+play8 / play2 / walk1 at one lookup (SLOWER on play_2 at n <= 65,536), but SLOWER (1.06 .. 1.58) on 37 of 50 cells at two or three
+lookups per frame in both runs; its B/op tier (read as one channel fewer inlined) was higher on 33 of those 37 (play_2 at n >= 65,536 is SLOWER at equal tier). The one-tail body stays (SH-R2); it beat W on
+every multi-lookup run-cell (0.50 .. 0.80). The step cap was not measured (ruled out of the hold).
+
+### 4.4 Prior art (cited, not re-read in this burst)
+Galloping (exponential) search from a finger: Bentley and Yao, "An almost optimal algorithm for unbounded
+searching" (1976); the same doubling step as Timsort's galloping mode (Peters, listsort.txt). The one-tail shape is
+the audit's hintCompact idea (ROADMAP 8a item 10 note) applied to the upper bound.
