@@ -28,6 +28,10 @@ number from them is never quoted as this package's number.
 - Archive (2026-11-24, after 1.0.0): finished specs, review overlays, old commit messages and `audit/`
   (audit/2026-11-11-bisect/ followed on 2026-11-24 with the 1.1 README re-cite) were moved to
   `.handoff/archive/1.0.0/` with their relative paths kept; citations of moved paths name the archive path.
+  Archive (2026-11-24 UTC, after 1.1.0): seghint-1.1, bb1b4, ab4bb123, fillers, release-1.1.0, release-1.1.0b,
+  PROPOSAL-seghint.md and COMMIT_MSG-CLOSEOUT.txt moved to `.handoff/archive/1.1.0/` the same way, with a copy of the
+  1.1.0 commit message as COMMIT_MSG-1.1.0.txt (the archived
+  seghint-1.1/evidence/parity.mjs resolves the package root by relative depth, so it no longer runs from there).
 - Tiers: DETERMINISTIC gates run in `npm test` / `npm run verify` every time; STATISTICAL
   gates run once per release, interleaved A/B on hosted CI; REPORTED numbers gate nothing.
 
@@ -912,7 +916,7 @@ on these kernels. No single green gate authorises a release.
   Reopens with: an explanation of the traced budget accounting, a consumer whose own A/B shows one lookup per frame function on play8 / play2 / walk1-like streams (V-FAST), an x86 run, a V8 that changes the cumulative budget or inlines cold calls,
   or a consumer trace with >= 3 channels in one frame function.
 
-### C14. A bytecode size read on a probe that imports its inner carries +2 B per site *(MEASURED 2026-11-24, X-8; node v26.8.2, --print-bytecode, untimed, one probe run, as .handoff/seghint-1.1/evidence/bytecode-cause.txt states)*
+### C14. A bytecode size read on a probe that imports its inner carries +2 B per site *(MEASURED 2026-11-24, X-8; node v26.8.2, --print-bytecode, untimed, one probe run, as .handoff/archive/1.1.0/seghint-1.1/evidence/bytecode-cause.txt states)*
 - **What happened:** R1 read the one-tail upperBoundHint at 214 B on a probe that IMPORTS upperBoundBranchless<T>
   (cand.gen.mjs); the shipped Bisect.js reads 212 B (all 5 copies equal). SH-R2 had quoted 214 B.
 - **Root cause:** an imported binding loads with LdaModuleVariable + ThrowReferenceErrorIfHole (a 2 B TDZ check) per
@@ -920,7 +924,7 @@ on these kernels. No single green gate authorises a release.
   trace cross-checks: the 2-tail mirror with 2 import sites read 232 = 228 + 2 x 2.
 - **Lesson:** measure a bytecode budget on the build that ships (the same module), never on a probe that imports the
   inner kernel. The expected value is typed from a derivation and the measurement confirms it, never the reverse.
-- **Evidence:** .handoff/seghint-1.1/evidence/bytecode-cause.txt; .handoff/seghint-1.1/SPEC.md X-8.
+- **Evidence:** .handoff/archive/1.1.0/seghint-1.1/evidence/bytecode-cause.txt; .handoff/archive/1.1.0/seghint-1.1/SPEC.md X-8.
 - **Law:** 9 (none new). **Gate:** test/gates/expect.json "==" rows (each new row carries a "derivation" field) +
   test/gates/bytecode.test.mjs (the 213 B / 32 B controls fail exactly their row and the copies check).
   Reopens with: a V8 that changes how module variables load (the "==" rows are then re-derived, not re-measured
@@ -933,15 +937,15 @@ on these kernels. No single green gate authorises a release.
   317 / 317 on the same tree. The two extra branch ranges (c8 json branchMap, present only when the docs test runs) are
   Bisect.js:53:17-55:18 (upperBoundBranchlessF64: the block after `if (n === 0) return lo;`) and Bisect.js:547-548
   (assertRange: the throw path after `return;`). The 1.1 cycle's pre-docs measure pass read 316 with the docs
-  export-names row red, on the pre-BB4 README (fewer snippets; cause UNVERIFIED, .handoff/seghint-1.1/qa/qa.md:19).
+  export-names row red, on the pre-BB4 README (fewer snippets; cause UNVERIFIED, .handoff/archive/1.1.0/seghint-1.1/qa/qa.md:19).
   Lines moved 563 -> 564 with the one-line header edit (c8 counts physical lines), so "563 / 563" is also not stable.
 - **Root cause:** likely, UNVERIFIED: V8 block coverage reports a nested range only where its count differs from its
   parent's, and c8 unions ranges over every test process, so the denominator is a property of the test set's
   execution counts, not of Bisect.js. Percentages stay at 100% in every run.
-- **Evidence:** .handoff/fillers/cov-1.log, cov-2.log, cov-3.log (3 full runs on HEAD 5cd73db); one docs-excluded run
-  (315 / 315) and one paired full run (317 / 317) on the header-edited tree, .handoff/fillers/c8/ (README.txt with the
+- **Evidence:** .handoff/archive/1.1.0/fillers/cov-1.log, cov-2.log, cov-3.log (3 full runs on HEAD 5cd73db); one docs-excluded run
+  (315 / 315) and one paired full run (317 / 317) on the header-edited tree, .handoff/archive/1.1.0/fillers/c8/ (README.txt with the
   branchMap diff, nodocs-coverage-final.json, all-coverage-final.json); the 316 read:
-  .handoff/bb1b4/measure/coverage.log:477 (docs row red at :35); 564 lines: .handoff/fillers/verify.log (coverage step);
+  .handoff/archive/1.1.0/bb1b4/measure/coverage.log:477 (docs row red at :35); 564 lines: .handoff/archive/1.1.0/fillers/verify.log (coverage step);
   all untimed, node v26.8.2, darwin arm64, measured by the orchestrator 2026-11-24.
 - **Law:** none new. **Gate:** none for the denominator (ungated by ruling); c8 `--check-coverage --lines 100
   --branches 100` gates both percentages. README Evidence table and CHANGELOG [Unreleased] now state 100% lines, 100%

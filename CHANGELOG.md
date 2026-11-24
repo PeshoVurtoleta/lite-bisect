@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Docs and test-file comments only: citations of the 1.1 evidence folders and files now name `.handoff/archive/1.1.0/`
+  (the folders were archived after the 1.1.0 release); no code or behavior change.
+
 ## [1.1.0] - 2026-11-24
 
 ### Added
@@ -53,7 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (3621f69, sha256 7e0f9262), so no new dispatch. `upperBoundHint*` and `segmentHint*` make no speed claim.
 
 - `npm test`: 418 tests, 418 pass. Mutants: 146 rows (28 per type x 5 types + 3 rounded-tie + 3 infinity), all
-  killed. Coverage: 100% lines, 100% branches, 47 / 47 functions (denominators not quoted: LEDGER C15). Counts from the burst-closing `npm run verify` (`.handoff/fillers/verify.log`, 2026-11-24T07:52:46Z..07:56:59Z, exit 0, node v26.8.2, darwin arm64, host PRELIMINARY (load1 3.40 at start vs baseline 2.21), one run; the mutant rows were last read in the 1.1 cycle's verify).
+  killed. Coverage: 100% lines, 100% branches, 47 / 47 functions (denominators not quoted: LEDGER C15). Counts from the burst-closing `npm run verify` (`.handoff/archive/1.1.0/fillers/verify.log`, 2026-11-24T07:52:46Z..07:56:59Z, exit 0, node v26.8.2, darwin arm64, host PRELIMINARY (load1 3.40 at start vs baseline 2.21), one run; the mutant rows were last read in the 1.1 cycle's verify).
 - Torture: phase 1 4096 cycles, 184320 / 184320 checks; phase 2 45 / 45 lanes x 200000 ops per lane.
 - Alloc gate: 225 lanes (45 kernels). Bytecode gate, exact: `upperBoundHint<T>` 212 B, `segmentHint<T>` 31 B, five
   copies equal.
