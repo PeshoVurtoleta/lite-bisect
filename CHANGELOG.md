@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- 10 exports in `Bisect.js` (47 in all: 9 kernel families x 5 array types = 45 kernels, plus 2 cold asserts),
+  suffix `F64` / `F32` / `U32` / `U16` / `I32` as before:
+  - `upperBoundHint*` -- `upperBoundHint<T>(a, lo, hi, x, h)`: the upper bound, galloping out from the hint `h`.
+    `h` is an integer index or NaN (NaN -> `lo`; outside `[lo, hi]` clamped); a non-integer `h` is a caller error.
+    A NaN query returns `lo`.
+  - `segmentHint*` -- `segmentHint<T>(a, lo, hi, x, s)`: `segment`, where `s` is the previous segment result
+    (`lo - 1 .. hi - 1`) and the gallop starts at `s + 1`. `s` is an integer or NaN (NaN -> as `s = lo - 1`;
+    outside `[lo - 1, hi - 1]` clamped); a non-integer `s` is a caller error. A NaN query returns `lo - 1`.
+    For a coherent stream of segment lookups, pass the previous result back as `s`.
+  - The `hi - lo <= 2^30 - 1` range cap applies to both.
+- The allocation statement (unchanged sentence) gains one line for the new families: the `h` of `upperBoundHint*` is a
+  hint as for `lowerBoundHint*`; the no-hint value of `segmentHint*` is `lo - 1` (an integer, no box); a NaN `s`
+  (the literal NaN too) or a non-Smi `s` makes one 16 B HeapNumber on Node inside `segmentHint*` when
+  `upperBoundHint*` is not inlined into it.
+- `Bisect.d.ts` declares the 10 exports; README and `llms.txt` list them in every family enumeration, and the
+  README / `llms.txt` statement that there is no `segmentHint*` export is replaced by its description.
+
+### Changed
+
+- `package.json`: `publishConfig.access` is `public`; `repository.url` is `git+https://...` (`npm pkg fix`); the
+  description names the hinted upper bound and segment searches.
+
+### Gates / Tests
+
+- `npm test`: 391 tests, 391 pass. Mutants: 146 rows (28 per type x 5 types + 3 rounded-tie + 3 infinity), all
+  killed. Coverage: 100% lines (563 / 563), branches (317 / 317), functions (47 / 47). Counts from the 1.1 cycle's `npm run verify` (2026-11-24, node v26.8.2, darwin arm64, host QUIET, one run).
+- Torture: phase 1 4096 cycles, 184320 / 184320 checks; phase 2 45 / 45 lanes x 200000 ops per lane.
+- Alloc gate: 225 lanes (45 kernels). Bytecode gate, exact: `upperBoundHint<T>` 212 B, `segmentHint<T>` 31 B, five
+  copies equal.
+- TurboFan inline pin: 75 single-channel edges (every Node), plus 25 two-channel edges on node v26.8.2 only
+  (DETERMINISTIC on the pin; NO VERDICT elsewhere). Trace your own caller.
+
 ## [1.0.0] - 2026-11-23
 
 ### Added

@@ -24,8 +24,10 @@
 //   (f5) STALL_MS=2300 + a retaining plant IN lowerBoundHintI32 (the stalled lane itself) -> exit 1: an undrained
 //       lane that also fails a channel is FAIL (evidence wins); its LANE ' FAIL', the stderr settle drained=false
 //       line, GATE ' | FAIL', no NO VERDICT line.
-// A failing (a)/(b)/(f*) assertion prints the child's GATE line and its stderr fails lines (CI shows nothing else).
-// Spawns ((a), (b), (d), (f1)..(f5)) pass npm run torture's flags: TIER, GC and PIN.
+//   (g) the (a) box plant in segmentHintF32 (seghint 1.1; its lane feeds an integer Smi x, so x + 0.5 is a fresh
+//       16 B HeapNumber per op) -> exit 1 with ONLY the segmentHintF32 lane FAIL (assertPlantLane(r, lane)).
+// A failing (a)/(b)/(f*)/(g) assertion prints the child's GATE line and its stderr fails lines (CI shows nothing else).
+// Spawns ((a), (b), (d), (f1)..(f5), (g)) pass npm run torture's flags: TIER, GC and PIN.
 // The clean run is `npm run torture` (verify), not repeated here. Plants live in a mktemp dir, removed at
 // exit. NODE_V8_COVERAGE is dropped from the child env (c8 must not instrument the torture child).
 
@@ -57,6 +59,7 @@ const TIMEOUT_MS = 120000;
 const ANCHOR = 'export function upperBoundBranchyF64(a, lo, hi, x) {\n';
 const PLANT_LANE = 'upperBoundBranchyF64';
 const N_LANES = Object.keys(KERNELS).length * TYPE_NAMES.length;   // the oracle roster, not torture's own count
+const ROSTER = Object.keys(KERNELS).flatMap((k) => TYPE_NAMES.map((T) => k + T));   // every lane name, oracle order
 
 const TMP = mkdtempSync(join(tmpdir(), 'lite-bisect-torture-ctl-'));
 after(() => { rmSync(TMP, { recursive: true, force: true }); });
@@ -91,14 +94,16 @@ function childDiag(r) {
     return '\n-- child GATE: ' + (g ? g[0] : '(no GATE line)') + '\n-- child stderr:\n' + (e || '(empty stderr)');
 }
 
-// A FAIL attributed to the planted lane: its LANE line has minor > 0 and FAIL; every other kernel lane is ok.
-function assertPlantLane(r) {
+// A FAIL attributed to the planted lane `lane` (a roster name): its LANE line has minor > 0 and FAIL; every other
+// kernel lane is ok.
+function assertPlantLane(r, lane) {
+    if (!ROSTER.includes(lane)) assert.fail('NO VERDICT: assertPlantLane lane ' + JSON.stringify(lane) + ' is not in the oracle roster');
     const diag = childDiag(r);
     const lanes = r.stdout.split('\n').filter((l) => l.startsWith('LANE '));
     assert.equal(lanes.length, N_LANES, 'LANE lines: ' + lanes.length + diag);
     const bad = lanes.filter((l) => !l.endsWith(' ok'));
-    assert.deepEqual(bad.map((l) => l.split(' ')[1]), [PLANT_LANE], bad.join('\n') + diag);
-    const m = /^LANE upperBoundBranchyF64 major=0 minor=(\d+) .* FAIL$/.exec(bad[0]);
+    assert.deepEqual(bad.map((l) => l.split(' ')[1]), [lane], bad.join('\n') + diag);
+    const m = new RegExp('^LANE ' + lane + ' major=0 minor=(\\d+) .* FAIL$').exec(bad[0]);
     assert.ok(m && Number(m[1]) > 0, 'planted lane not failed by a steady minor: ' + bad[0] + diag);
     assert.match(r.stdout, /^GATE .* \| FAIL$/m, 'no "GATE ... | FAIL" line in the child stdout' + diag);
 }
@@ -107,14 +112,14 @@ test('(a) a 16 B/op box planted in upperBoundBranchyF64 -> torture exit 1', () =
     const r = torture(['--expose-gc', TIER, GC, ...PIN], { LITE_BISECT_TORTURE_MODULE: plant('box', 'globalThis.__bisectBox = x + 0.5;') });
     console.log('# (a) exit ' + r.status + ' | ' + r.stdout.split('\n').filter((l) => l.startsWith('LANE ' + PLANT_LANE + ' ') || l.startsWith('GATE')).join(' | '));
     assert.equal(r.status, 1, r.stdout + r.stderr);
-    assertPlantLane(r);
+    assertPlantLane(r, PLANT_LANE);
 });
 
 test('(b) a { x } object planted in upperBoundBranchyF64 -> torture exit 1', () => {
     const r = torture(['--expose-gc', TIER, GC, ...PIN], { LITE_BISECT_TORTURE_MODULE: plant('obj', 'globalThis.__bisectBox = { x };') });
     console.log('# (b) exit ' + r.status + ' | ' + r.stdout.split('\n').filter((l) => l.startsWith('LANE ' + PLANT_LANE + ' ') || l.startsWith('GATE')).join(' | '));
     assert.equal(r.status, 1, r.stdout + r.stderr);
-    assertPlantLane(r);
+    assertPlantLane(r, PLANT_LANE);
 });
 
 test('(c) unpinned / half-pinned / other or overridden semi-space values -> torture exit 2 before the build import and any lane', () => {
@@ -190,7 +195,7 @@ test('(e) control: a failing assertPlantLane message carries the child\'s stderr
     const r = child(true);
     assert.equal(r.stdout.split('\n').filter((l) => l.startsWith('LANE ')).length, N_LANES);
     assert.ok(r.stdout.includes(PLANTED) && r.stdout.includes('LANE ' + EXTRA + ' '), 'fixture lacks the planted or the extra lane');
-    assert.throws(() => assertPlantLane(r), (err) => {
+    assert.throws(() => assertPlantLane(r, PLANT_LANE), (err) => {
         assert.ok(err instanceof assert.AssertionError, 'not an AssertionError: ' + err);
         for (const want of [ERR_PLANT, ERR_EXTRA, GATE]) {
             assert.ok(err.message.includes(want), 'message lacks ' + JSON.stringify(want) + ':\n' + err.message);
@@ -198,7 +203,7 @@ test('(e) control: a failing assertPlantLane message carries the child\'s stderr
         return true;
     });
     // Twin: the extra lane ok and its stderr line gone -> no throw, so the throw above is the extra lane's.
-    assertPlantLane(child(false));
+    assertPlantLane(child(false), PLANT_LANE);
     // Rows for the other three messages: a LANE line missing (crashed child), the planted lane without a steady
     // minor, the GATE line not FAIL (and absent). Each message must carry ERR_PLANT and the GATE text verbatim.
     const base = child(false);
@@ -208,7 +213,7 @@ test('(e) control: a failing assertPlantLane message carries the child\'s stderr
         [base.stdout.replace(GATE, GATE.replace(' | FAIL', ' | ok')), GATE.replace(' | FAIL', ' | ok')],
         [base.stdout.replace(GATE + '\n', ''), '(no GATE line)'],
     ]) {
-        assert.throws(() => assertPlantLane({ stdout, stderr: base.stderr, status: 1 }), (err) => {
+        assert.throws(() => assertPlantLane({ stdout, stderr: base.stderr, status: 1 }, PLANT_LANE), (err) => {
             assert.ok(err instanceof assert.AssertionError && err.message.includes(ERR_PLANT) &&
                 err.message.includes('-- child GATE: ' + gate), 'row message lacks the diag:\n' + err.message);
             return true;
@@ -282,4 +287,13 @@ test('(f5) STALL_MS=2300 + a retaining plant in lowerBoundHintI32 -> torture exi
     assert.match(r.stderr, /^ {2}lane lowerBoundHintI32 .* settle drained=false waited=/m, 'no settle drained=false fails line' + diag);
     assert.match(r.stdout, /^GATE .* \| FAIL$/m, 'no "GATE ... | FAIL" line' + diag);
     assert.ok(!r.stderr.includes(UNDRAINED_PREFIX), 'a FAIL run printed the NO VERDICT line' + diag);
+});
+
+test('(g) a 16 B/op box planted in segmentHintF32 -> torture exit 1, only that lane FAIL', () => {
+    const lane = 'segmentHintF32';
+    const anchor = 'export function segmentHintF32(a, lo, hi, x, s) {\n';
+    const r = torture(FLAGS, { LITE_BISECT_TORTURE_MODULE: plant('box-seghint', 'globalThis.__bisectBox = x + 0.5;', anchor) });
+    console.log('# (g) exit ' + r.status + ' | ' + r.stdout.split('\n').filter((l) => l.startsWith('LANE ' + lane + ' ') || l.startsWith('GATE')).join(' | '));
+    assert.equal(r.status, 1, 'exit ' + r.status + childDiag(r));
+    assertPlantLane(r, lane);
 });

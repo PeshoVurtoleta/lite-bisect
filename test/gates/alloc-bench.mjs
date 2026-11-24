@@ -11,12 +11,17 @@
 // Query classes (LEDGER C2): smi = integer doubles in the Smi range, frac = smi + 0.5, big = integer
 // doubles >= 2^31 (not a Smi on Node's 32-bit Smi), nan = NaN. Every query is read from a Float64Array, so
 // the value stays a float64 in optimized code until it crosses a call V8 does not inline.
-// Hint classes (AU-R3, R-NANHINT-BOX), lowerBoundHint<T> only, Smi query (the smi class's queries):
+// Hint classes (AU-R3, R-NANHINT-BOX), the hinted families lowerBoundHint<T> / upperBoundHint<T> / segmentHint<T>,
+// Smi query (the smi class's queries):
 // nanhint = h read per op from a Float64Array filled with NaN (a non-Smi number across the call: one 16 B box
 // when the kernel is not inlined), nanlit = h is the literal NaN (a constant: no box in any tier), fracnanhint =
 // the frac query (smi + 0.5) AND the NaN hint, both read per op from Float64Arrays (TWO non-Smi number arguments
 // across one call: two 16 B boxes = 32 B/op when not inlined; NEON-R1, "one box per such argument"). The test
 // names these extra classes itself and passes them to census().
+// seghint 1.1 (B3): upperBoundHint<T> lanes take lowerBoundHint's hint shapes (h from H, NaN from HN); segmentHint<T>
+// lanes take segment's x classes plus the hint classes, s read from H1 (Int32Array, H - 1: the segment-result
+// convention, in [-1, LEN - 1]), NaN s from HN. Inside segmentHint s + 1 is a new number crossing the call into
+// upperBoundHint, so a non-Smi s boxes once more there when that call is not inlined (SPEC B-S3; the test owns the ranges).
 // State is allocated at import; a lane writes its Smi result to an Int32Array slot and allocates nothing.
 // Tier check (LEDGER law 8), only when LITE_BISECT_TIER_FILE names a file (needs --allow-natives-syntax):
 // at process exit the bench writes JSON { execArgv, ref: { on, off, maglev }, lanes: { name: status },
@@ -35,6 +40,7 @@ import {
     lowerBoundBranchlessU32, upperBoundBranchlessU32, lowerBoundBranchyU32, upperBoundBranchyU32, lowerBoundHintU32, segmentU32, nearestU32,
     lowerBoundBranchlessU16, upperBoundBranchlessU16, lowerBoundBranchyU16, upperBoundBranchyU16, lowerBoundHintU16, segmentU16, nearestU16,
     lowerBoundBranchlessI32, upperBoundBranchlessI32, lowerBoundBranchyI32, upperBoundBranchyI32, lowerBoundHintI32, segmentI32, nearestI32,
+    upperBoundHintF64, segmentHintF64, upperBoundHintF32, segmentHintF32, upperBoundHintU32, segmentHintU32, upperBoundHintU16, segmentHintU16, upperBoundHintI32, segmentHintI32,
 } from '../../Bisect.js';
 
 const LEN = 1024;
@@ -86,6 +92,8 @@ for (const t of Object.keys(Q)) {
     }
 }
 for (let j = 0; j < QLEN; j++) H[j] = Math.floor(rnd() * (LEN + 1));   // integer hint in [0, LEN]
+const H1 = new Int32Array(QLEN);   // segmentHint s = H - 1, in [-1, LEN - 1] (the segment-result convention)
+for (let j = 0; j < QLEN; j++) H1[j] = H[j] - 1;
 
 // ---- lanes: literal, one call site each -----------------------------------------------------
 export const lanes = {
@@ -245,6 +253,77 @@ export const lanes = {
     'nearestI32.frac': (i) => { OUT[0] = nearestI32(A_I32, 0, LEN, QF_I32[i & QMASK]); },
     'nearestI32.big': (i) => { OUT[0] = nearestI32(A_I32, 0, LEN, QB_I32[i & QMASK]); },
     'nearestI32.nan': (i) => { OUT[0] = nearestI32(A_I32, 0, LEN, QN_I32[i & QMASK]); },
+    // ---- seghint 1.1 (B3): upperBoundHint<T> (h from H / HN) and segmentHint<T> (s from H1 = H - 1 / HN) ----
+    'upperBoundHintF64.smi': (i) => { OUT[0] = upperBoundHintF64(A_F64, 0, LEN, QS_F64[i & QMASK], H[i & QMASK]); },
+    'upperBoundHintF64.frac': (i) => { OUT[0] = upperBoundHintF64(A_F64, 0, LEN, QF_F64[i & QMASK], H[i & QMASK]); },
+    'upperBoundHintF64.big': (i) => { OUT[0] = upperBoundHintF64(A_F64, 0, LEN, QB_F64[i & QMASK], H[i & QMASK]); },
+    'upperBoundHintF64.nan': (i) => { OUT[0] = upperBoundHintF64(A_F64, 0, LEN, QN_F64[i & QMASK], H[i & QMASK]); },
+    'upperBoundHintF64.nanhint': (i) => { OUT[0] = upperBoundHintF64(A_F64, 0, LEN, QS_F64[i & QMASK], HN[i & QMASK]); },
+    'upperBoundHintF64.nanlit': (i) => { OUT[0] = upperBoundHintF64(A_F64, 0, LEN, QS_F64[i & QMASK], NaN); },
+    'upperBoundHintF64.fracnanhint': (i) => { OUT[0] = upperBoundHintF64(A_F64, 0, LEN, QF_F64[i & QMASK], HN[i & QMASK]); },
+    'segmentHintF64.smi': (i) => { OUT[0] = segmentHintF64(A_F64, 0, LEN, QS_F64[i & QMASK], H1[i & QMASK]); },
+    'segmentHintF64.frac': (i) => { OUT[0] = segmentHintF64(A_F64, 0, LEN, QF_F64[i & QMASK], H1[i & QMASK]); },
+    'segmentHintF64.big': (i) => { OUT[0] = segmentHintF64(A_F64, 0, LEN, QB_F64[i & QMASK], H1[i & QMASK]); },
+    'segmentHintF64.nan': (i) => { OUT[0] = segmentHintF64(A_F64, 0, LEN, QN_F64[i & QMASK], H1[i & QMASK]); },
+    'segmentHintF64.nanhint': (i) => { OUT[0] = segmentHintF64(A_F64, 0, LEN, QS_F64[i & QMASK], HN[i & QMASK]); },
+    'segmentHintF64.nanlit': (i) => { OUT[0] = segmentHintF64(A_F64, 0, LEN, QS_F64[i & QMASK], NaN); },
+    'segmentHintF64.fracnanhint': (i) => { OUT[0] = segmentHintF64(A_F64, 0, LEN, QF_F64[i & QMASK], HN[i & QMASK]); },
+    'upperBoundHintF32.smi': (i) => { OUT[0] = upperBoundHintF32(A_F32, 0, LEN, QS_F32[i & QMASK], H[i & QMASK]); },
+    'upperBoundHintF32.frac': (i) => { OUT[0] = upperBoundHintF32(A_F32, 0, LEN, QF_F32[i & QMASK], H[i & QMASK]); },
+    'upperBoundHintF32.big': (i) => { OUT[0] = upperBoundHintF32(A_F32, 0, LEN, QB_F32[i & QMASK], H[i & QMASK]); },
+    'upperBoundHintF32.nan': (i) => { OUT[0] = upperBoundHintF32(A_F32, 0, LEN, QN_F32[i & QMASK], H[i & QMASK]); },
+    'upperBoundHintF32.nanhint': (i) => { OUT[0] = upperBoundHintF32(A_F32, 0, LEN, QS_F32[i & QMASK], HN[i & QMASK]); },
+    'upperBoundHintF32.nanlit': (i) => { OUT[0] = upperBoundHintF32(A_F32, 0, LEN, QS_F32[i & QMASK], NaN); },
+    'upperBoundHintF32.fracnanhint': (i) => { OUT[0] = upperBoundHintF32(A_F32, 0, LEN, QF_F32[i & QMASK], HN[i & QMASK]); },
+    'segmentHintF32.smi': (i) => { OUT[0] = segmentHintF32(A_F32, 0, LEN, QS_F32[i & QMASK], H1[i & QMASK]); },
+    'segmentHintF32.frac': (i) => { OUT[0] = segmentHintF32(A_F32, 0, LEN, QF_F32[i & QMASK], H1[i & QMASK]); },
+    'segmentHintF32.big': (i) => { OUT[0] = segmentHintF32(A_F32, 0, LEN, QB_F32[i & QMASK], H1[i & QMASK]); },
+    'segmentHintF32.nan': (i) => { OUT[0] = segmentHintF32(A_F32, 0, LEN, QN_F32[i & QMASK], H1[i & QMASK]); },
+    'segmentHintF32.nanhint': (i) => { OUT[0] = segmentHintF32(A_F32, 0, LEN, QS_F32[i & QMASK], HN[i & QMASK]); },
+    'segmentHintF32.nanlit': (i) => { OUT[0] = segmentHintF32(A_F32, 0, LEN, QS_F32[i & QMASK], NaN); },
+    'segmentHintF32.fracnanhint': (i) => { OUT[0] = segmentHintF32(A_F32, 0, LEN, QF_F32[i & QMASK], HN[i & QMASK]); },
+    'upperBoundHintU32.smi': (i) => { OUT[0] = upperBoundHintU32(A_U32, 0, LEN, QS_U32[i & QMASK], H[i & QMASK]); },
+    'upperBoundHintU32.frac': (i) => { OUT[0] = upperBoundHintU32(A_U32, 0, LEN, QF_U32[i & QMASK], H[i & QMASK]); },
+    'upperBoundHintU32.big': (i) => { OUT[0] = upperBoundHintU32(A_U32, 0, LEN, QB_U32[i & QMASK], H[i & QMASK]); },
+    'upperBoundHintU32.nan': (i) => { OUT[0] = upperBoundHintU32(A_U32, 0, LEN, QN_U32[i & QMASK], H[i & QMASK]); },
+    'upperBoundHintU32.nanhint': (i) => { OUT[0] = upperBoundHintU32(A_U32, 0, LEN, QS_U32[i & QMASK], HN[i & QMASK]); },
+    'upperBoundHintU32.nanlit': (i) => { OUT[0] = upperBoundHintU32(A_U32, 0, LEN, QS_U32[i & QMASK], NaN); },
+    'upperBoundHintU32.fracnanhint': (i) => { OUT[0] = upperBoundHintU32(A_U32, 0, LEN, QF_U32[i & QMASK], HN[i & QMASK]); },
+    'segmentHintU32.smi': (i) => { OUT[0] = segmentHintU32(A_U32, 0, LEN, QS_U32[i & QMASK], H1[i & QMASK]); },
+    'segmentHintU32.frac': (i) => { OUT[0] = segmentHintU32(A_U32, 0, LEN, QF_U32[i & QMASK], H1[i & QMASK]); },
+    'segmentHintU32.big': (i) => { OUT[0] = segmentHintU32(A_U32, 0, LEN, QB_U32[i & QMASK], H1[i & QMASK]); },
+    'segmentHintU32.nan': (i) => { OUT[0] = segmentHintU32(A_U32, 0, LEN, QN_U32[i & QMASK], H1[i & QMASK]); },
+    'segmentHintU32.nanhint': (i) => { OUT[0] = segmentHintU32(A_U32, 0, LEN, QS_U32[i & QMASK], HN[i & QMASK]); },
+    'segmentHintU32.nanlit': (i) => { OUT[0] = segmentHintU32(A_U32, 0, LEN, QS_U32[i & QMASK], NaN); },
+    'segmentHintU32.fracnanhint': (i) => { OUT[0] = segmentHintU32(A_U32, 0, LEN, QF_U32[i & QMASK], HN[i & QMASK]); },
+    'upperBoundHintU16.smi': (i) => { OUT[0] = upperBoundHintU16(A_U16, 0, LEN, QS_U16[i & QMASK], H[i & QMASK]); },
+    'upperBoundHintU16.frac': (i) => { OUT[0] = upperBoundHintU16(A_U16, 0, LEN, QF_U16[i & QMASK], H[i & QMASK]); },
+    'upperBoundHintU16.big': (i) => { OUT[0] = upperBoundHintU16(A_U16, 0, LEN, QB_U16[i & QMASK], H[i & QMASK]); },
+    'upperBoundHintU16.nan': (i) => { OUT[0] = upperBoundHintU16(A_U16, 0, LEN, QN_U16[i & QMASK], H[i & QMASK]); },
+    'upperBoundHintU16.nanhint': (i) => { OUT[0] = upperBoundHintU16(A_U16, 0, LEN, QS_U16[i & QMASK], HN[i & QMASK]); },
+    'upperBoundHintU16.nanlit': (i) => { OUT[0] = upperBoundHintU16(A_U16, 0, LEN, QS_U16[i & QMASK], NaN); },
+    'upperBoundHintU16.fracnanhint': (i) => { OUT[0] = upperBoundHintU16(A_U16, 0, LEN, QF_U16[i & QMASK], HN[i & QMASK]); },
+    'segmentHintU16.smi': (i) => { OUT[0] = segmentHintU16(A_U16, 0, LEN, QS_U16[i & QMASK], H1[i & QMASK]); },
+    'segmentHintU16.frac': (i) => { OUT[0] = segmentHintU16(A_U16, 0, LEN, QF_U16[i & QMASK], H1[i & QMASK]); },
+    'segmentHintU16.big': (i) => { OUT[0] = segmentHintU16(A_U16, 0, LEN, QB_U16[i & QMASK], H1[i & QMASK]); },
+    'segmentHintU16.nan': (i) => { OUT[0] = segmentHintU16(A_U16, 0, LEN, QN_U16[i & QMASK], H1[i & QMASK]); },
+    'segmentHintU16.nanhint': (i) => { OUT[0] = segmentHintU16(A_U16, 0, LEN, QS_U16[i & QMASK], HN[i & QMASK]); },
+    'segmentHintU16.nanlit': (i) => { OUT[0] = segmentHintU16(A_U16, 0, LEN, QS_U16[i & QMASK], NaN); },
+    'segmentHintU16.fracnanhint': (i) => { OUT[0] = segmentHintU16(A_U16, 0, LEN, QF_U16[i & QMASK], HN[i & QMASK]); },
+    'upperBoundHintI32.smi': (i) => { OUT[0] = upperBoundHintI32(A_I32, 0, LEN, QS_I32[i & QMASK], H[i & QMASK]); },
+    'upperBoundHintI32.frac': (i) => { OUT[0] = upperBoundHintI32(A_I32, 0, LEN, QF_I32[i & QMASK], H[i & QMASK]); },
+    'upperBoundHintI32.big': (i) => { OUT[0] = upperBoundHintI32(A_I32, 0, LEN, QB_I32[i & QMASK], H[i & QMASK]); },
+    'upperBoundHintI32.nan': (i) => { OUT[0] = upperBoundHintI32(A_I32, 0, LEN, QN_I32[i & QMASK], H[i & QMASK]); },
+    'upperBoundHintI32.nanhint': (i) => { OUT[0] = upperBoundHintI32(A_I32, 0, LEN, QS_I32[i & QMASK], HN[i & QMASK]); },
+    'upperBoundHintI32.nanlit': (i) => { OUT[0] = upperBoundHintI32(A_I32, 0, LEN, QS_I32[i & QMASK], NaN); },
+    'upperBoundHintI32.fracnanhint': (i) => { OUT[0] = upperBoundHintI32(A_I32, 0, LEN, QF_I32[i & QMASK], HN[i & QMASK]); },
+    'segmentHintI32.smi': (i) => { OUT[0] = segmentHintI32(A_I32, 0, LEN, QS_I32[i & QMASK], H1[i & QMASK]); },
+    'segmentHintI32.frac': (i) => { OUT[0] = segmentHintI32(A_I32, 0, LEN, QF_I32[i & QMASK], H1[i & QMASK]); },
+    'segmentHintI32.big': (i) => { OUT[0] = segmentHintI32(A_I32, 0, LEN, QB_I32[i & QMASK], H1[i & QMASK]); },
+    'segmentHintI32.nan': (i) => { OUT[0] = segmentHintI32(A_I32, 0, LEN, QN_I32[i & QMASK], H1[i & QMASK]); },
+    'segmentHintI32.nanhint': (i) => { OUT[0] = segmentHintI32(A_I32, 0, LEN, QS_I32[i & QMASK], HN[i & QMASK]); },
+    'segmentHintI32.nanlit': (i) => { OUT[0] = segmentHintI32(A_I32, 0, LEN, QS_I32[i & QMASK], NaN); },
+    'segmentHintI32.fracnanhint': (i) => { OUT[0] = segmentHintI32(A_I32, 0, LEN, QF_I32[i & QMASK], HN[i & QMASK]); },
 };
 
 /**

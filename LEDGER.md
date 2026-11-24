@@ -25,8 +25,8 @@ number from them is never quoted as this package's number.
 - Sources: `git log`, ROADMAP.md, `draft-check.mjs`, `.handoff/` (gitignored, once it exists), and the
   ledgers and RESEARCH.md of LiteLogLogN, LiteSignal and LiteFastBit32 under
   `/Users/zakkster/Work/Portfolio/LiteLibrariesSuite/`.
-- Archive (2026-11-24, after 1.0.0): finished specs, review overlays, old commit messages and `audit/` (except
-  audit/2026-11-11-bisect/, which README cites) were moved to
+- Archive (2026-11-24, after 1.0.0): finished specs, review overlays, old commit messages and `audit/`
+  (audit/2026-11-11-bisect/ followed on 2026-11-24 with the 1.1 README re-cite) were moved to
   `.handoff/archive/1.0.0/` with their relative paths kept; citations of moved paths name the archive path.
 - Tiers: DETERMINISTIC gates run in `npm test` / `npm run verify` every time; STATISTICAL
   gates run once per release, interleaved A/B on hosted CI; REPORTED numbers gate nothing.
@@ -373,7 +373,8 @@ on these kernels. No single green gate authorises a release.
   three oracles (test/oracle.mjs `naiveNearest`, `nearestWith`, `cfNearest`) used the same rounded expression, so
   every oracle, boundary and fuzz row agreed with the bug; the generators never reach a rounded tie.
 - **Root cause:** a tie rule written on rounded differences; an expected value taken from the code under test (law 9).
-- **Evidence:** audit/2026-11-11-bisect/reviewer-fable/, reviewer-opus/, cross-fable/ (exact BigInt reference,
+- **Evidence:**
+  .handoff/archive/1.0.0/audit/2026-11-11-bisect/reviewer-fable/, reviewer-opus/, cross-fable/ (exact BigInt reference,
   cross-repro.mjs: 22 fixed + 5 fuzz rows); host macOS arm64, node v26.8.2, loads as the CROSS.md files state.
 - **Law:** 9, 2 (the body is 189 B in every copy, TRACED by the bytecode gate 8 / 8; Maglev is expected not to inline
   it (189 B >= its 100 B cap; untraced); TurboFan does (inline pin)). Fix: TwoSum tail plus a `p * 0.5 + q * 0.5 !==
@@ -391,7 +392,8 @@ on these kernels. No single green gate authorises a release.
   passed the torture unpinned (cross-opus: a 16 B/op plant passes at the default semi-space).
 - **Root cause:** a measured channel with no threshold (the B4 shape again); short-lived allocation moves minor GCs
   only.
-- **Evidence:** audit/2026-11-11-bisect/cross-opus/CROSS.md (17 / 17 audited runs minor = 0; pinned 1 MB: the plant
+- **Evidence:**
+  .handoff/archive/1.0.0/audit/2026-11-11-bisect/cross-opus/CROSS.md (17 / 17 audited runs minor = 0; pinned 1 MB: the plant
   trips); host macOS arm64, node v26.8.2, load1 1.3 .. 2.6 as stated there.
 - **Law:** 9. Fix: steady `{ maxMajor: 0, maxMinor: 0 }`; `npm run torture` passes --no-concurrent-recompilation
   --min-semi-space-size=1 --max-semi-space-size=1 (AU-R5a "Accept the flag (Recommended)": without the tier flag the
@@ -410,7 +412,8 @@ on these kernels. No single green gate authorises a release.
   on incoherent streams" five times with no tier (a speed claim outside the tier law). (3) README / llms.txt cite
   LEDGER ids and RESEARCH.md, which are not in the npm tarball.
 - **Root cause:** the docs gate covered README snippets, one sentence and a token list; each other claim had no row.
-- **Evidence:** audit/2026-11-11-bisect/reviewer-*/REVIEW.md, cross-*/CROSS.md; macOS arm64, node v26.8.2.
+- **Evidence:**
+  .handoff/archive/1.0.0/audit/2026-11-11-bisect/reviewer-*/REVIEW.md, cross-*/CROSS.md; macOS arm64, node v26.8.2.
 - **Law:** 9, and the verification tiers (an untiered claim is unproven). Rulings: AU-R4 "Class 2, fix now
   (Recommended)"; AU-R6 "Pointer sentence + docs row (Recommended)"; AU-R7 "Tiered warning (Recommended)". The d.ts
   text and the pointer sentence are in Bisect.d.ts and README.
@@ -796,7 +799,8 @@ on these kernels. No single green gate authorises a release.
   argument materialisation across a call V8 does not inline, not the kernel's body.
 - **Root cause:** a double passed as an argument across a real call is a HeapNumber (C2, I8); NaN read from a typed
   array is not a Smi, and lo / hi (-0) and the hint are arguments too. The old sentence named the query only.
-- **Evidence:** audit/2026-11-11-bisect/cross-fable/CROSS.md and cross-repro.mjs (`--d4`, lanes smiq_nan_from_f64
+- **Evidence:**
+  .handoff/archive/1.0.0/audit/2026-11-11-bisect/cross-fable/CROSS.md and cross-repro.mjs (`--d4`, lanes smiq_nan_from_f64
   16.03 vs smiq_nan_literal 0.03 B/op; flags in its header), cross-opus/CROSS.md (2 runs, load1 2.58); host macOS
   arm64, node v26.8.2.
 - **Law:** 8. Fix: the AU-R3 sentence in Bisect.js / Bisect.d.ts / README / llms.txt / the docs test QBOX literal (one
@@ -865,7 +869,8 @@ on these kernels. No single green gate authorises a release.
   linear-scan oracle on 5 types (2,082,484 calls per lane, 0 fails; NaN x, NaN / out-of-range hints, duplicates,
   +-Infinity, -0, empty ranges, sub-ranges; 2^30 - 1 range returns). The audit's segHintFast fails 83,015 of them
   (NaN x: the B1 flipped predicate; NaN hint: never mapped to lo). R1 (TurboFan, frame callers in feedback form,
-  fractional x; traced on the R1 harness: n = 4,096, 45,000 warm calls, forced compile): V-1TAIL is 214 B (+31 B
+  fractional x; traced on the R1 harness: n = 4,096, 45,000 warm calls, forced compile): V-1TAIL is 214 B
+  (214 B measured with an imported inner; 212 B as shipped, X-8) (+31 B
   segment wrapper; today's lowerBoundHint is 228 B) and TurboFan inlined 2 of 3 channels where V-MIRROR and today's
   lowerBoundHint got 1 (c2 15.87, c3 31.71 B/op). The byte sums do not predict this (2 x 434 = 868 < 920): mechanism
   unverified, so every consumer traces its own caller (law 2). V-1F (268 B, one tail + fast check): its TurboFan caller
@@ -898,10 +903,26 @@ on these kernels. No single green gate authorises a release.
   (UTC), load1 2.38 -> 5.27 per its PROV lines), logs/r1-deopt.log; probes cand.template.js, r0-oracle.mjs, r1-inline.mjs over the frozen build 2352ccf /
   9a591998; node v26.8.2 / V8 14.6.202.34-node.28, Apple M4 Pro. R0 / R1 untimed (DETERMINISTIC on that engine, not
   gated); R2 / R3 and SH-R9 REPORTED (two local QUIET holds; x86 not run, law 7).
-- **Law:** 2, 4, 8, 9 (none new). **Gate:** none yet (a planner pass after the PROPOSAL handshake turns R0 / R1 into
-  node:test rows: oracle + mutants, bytecode budget, inline pin with a 2-channel caller).
+- **Law:** 2, 4, 8, 9 (none new). **Gate (1.1, landed):** oracle + `runHintSweep` (linear-scan
+  reference), 146 mutant rows (`test/mutants.json`), bytecode `"=="` rows 212 B / 31 B (`test/gates/expect.json`,
+  all 5 copies equal), the inline pin (75 single-channel edges every Node; 25 two-channel edges on node v26.8.2
+  only, with the c3 control), alloc gate 225 lanes, torture 45 lanes.
   Reopens with: an explanation of the traced budget accounting, a consumer whose own A/B shows one lookup per frame function on play8 / play2 / walk1-like streams (V-FAST), an x86 run, a V8 that changes the cumulative budget or inlines cold calls,
   or a consumer trace with >= 3 channels in one frame function.
+
+### C14. A bytecode size read on a probe that imports its inner carries +2 B per site *(MEASURED 2026-11-24, X-8; node v26.8.2, --print-bytecode, untimed, one probe run, as .handoff/seghint-1.1/evidence/bytecode-cause.txt states)*
+- **What happened:** R1 read the one-tail upperBoundHint at 214 B on a probe that IMPORTS upperBoundBranchless<T>
+  (cand.gen.mjs); the shipped Bisect.js reads 212 B (all 5 copies equal). SH-R2 had quoted 214 B.
+- **Root cause:** an imported binding loads with LdaModuleVariable + ThrowReferenceErrorIfHole (a 2 B TDZ check) per
+  call site; a same-module declaration loads with LdaModuleVariable only. One inner call site: 214 - 2 = 212. The same
+  trace cross-checks: the 2-tail mirror with 2 import sites read 232 = 228 + 2 x 2.
+- **Lesson:** measure a bytecode budget on the build that ships (the same module), never on a probe that imports the
+  inner kernel. The expected value is typed from a derivation and the measurement confirms it, never the reverse.
+- **Evidence:** .handoff/seghint-1.1/evidence/bytecode-cause.txt; .handoff/seghint-1.1/SPEC.md X-8.
+- **Law:** 9 (none new). **Gate:** test/gates/expect.json "==" rows (each new row carries a "derivation" field) +
+  test/gates/bytecode.test.mjs (the 213 B / 32 B controls fail exactly their row and the copies check).
+  Reopens with: a V8 that changes how module variables load (the "==" rows are then re-derived, not re-measured
+  into place).
 
 ---
 
@@ -967,7 +988,8 @@ on these kernels. No single green gate authorises a release.
   counts against the BASELINE + 1 rule.
 - **Law:** none new (the quiet-host rule). Lesson: idle the host ~2 minutes after any local run before a strict hold
   (done for the run that counted, 07:48:49Z).
-- **Evidence:** .handoff/research/seghint/logs/hold-r9.log (the 76 attempt, then the run); PROGRESS.md:424 (the smoke
+- **Evidence:** .handoff/research/seghint/logs/hold-r9.log (the 76 attempt, then the run);
+  .handoff/research/seghint/PROGRESS.md:424 (the smoke
   run PROV end 03:24:17Z) and :434 (the 120 s idle window before the run that counted); PROPOSAL-seghint section 6.
   **Gate:** none (process).
 

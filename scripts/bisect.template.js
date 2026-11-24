@@ -3,7 +3,8 @@
 // placeholder suffix on every name, between the marker comments of Bisect.js. Edit this file,
 // then run `npm run gen`; never edit the region by hand. Valid JS on its own (node --check).
 // Order: lowerBoundBranchless, upperBoundBranchless, lowerBoundBranchy, upperBoundBranchy,
-// lowerBoundHint, segment, nearest (segment / nearest after the kernels they call).
+// lowerBoundHint, segment, nearest, upperBoundHint, segmentHint (each after the kernels it calls;
+// the two hinted upper kernels are appended last, so every earlier body and anchor stays as it was).
 // The four bound bodies are the frozen draft bodies byte-for-byte; no guard is added (law 4).
 // MIT (c) Zahary Shinikchiev <shinikchiev@yahoo.com>
 
@@ -84,4 +85,25 @@ export function nearest$T(a, lo, hi, x) {
     // with a finite upper one is the farther of the two.
     const s = d - x, t = u - q;
     return i - ((!((x - (d - s)) - (p + s) > (q - (u - t)) - (x + t)) && p * 0.5 + q * 0.5 !== -Infinity) | 0);
+}
+
+export function upperBoundHint$T(a, lo, hi, x, h) {
+    if (!(h >= lo)) h = lo;
+    if (h > hi) h = hi;
+    let step = 1, b = lo, e = h;
+    if (h < hi && a[h] <= x) {
+        let r = h + 1;
+        b = r;
+        while (r < hi && a[r] <= x) { b = r + 1; step <<= 1; r = h + step; }
+        e = r > hi ? hi : r;
+    } else {
+        let l = h - 1;
+        while (l >= lo && !(a[l] <= x)) { e = l; step <<= 1; l = h - step; }
+        b = l < lo ? lo : l + 1;
+    }
+    return upperBoundBranchless$T(a, b, e, x);
+}
+
+export function segmentHint$T(a, lo, hi, x, s) {
+    return upperBoundHint$T(a, lo, hi, x, s + 1) - 1;
 }

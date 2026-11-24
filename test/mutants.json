@@ -1,5 +1,5 @@
 {
-  "comment": "LiteBisect U4 mutant rows (SPEC-p1 assertion 6). Every find is cut from the generated Bisect.js sha256 43add0b5 (the nearest.tie-le.* and nearest.rounded-tie.* rows from the AU-R1a build sha256 10add825, audit 2026-11-11 B3; the nearest.inf-gt.* and nearest.au-r1a.F64 rows from the same bytes at cf1b677, audit 2026-11-22 neon-1, killed by the oracle infinity phase INF_GROUPS) and matches EXACTLY ONCE inside its fn span (export function <fn>( to the next export function or // END GENERATED); a regen that changes it makes the row NOT-APPLIED = FAIL (R3). Run: node test/mutant-run.mjs. Cut by .handoff/p1/evidence/u4-cut-mutants.mjs. Float-only rows: nearest.rounded-tie.* (F64 / F32 / I32: no rounded tie on U32 / U16) and nearest.inf-gt.* (F64 / F32: no integer array holds Infinity, so it is equivalent on U32 / U16 / I32). nearest.au-r1a is F64 only: on F32 it is an EQUIVALENT mutant (the guard matters only when q - x overflows to +Infinity with p = -Infinity, and a difference of two float32 values never overflows a double).",
+  "comment": "LiteBisect U4 mutant rows (SPEC-p1 assertion 6). Every find is cut from the generated Bisect.js sha256 43add0b5 (the nearest.tie-le.* and nearest.rounded-tie.* rows from the AU-R1a build sha256 10add825, audit 2026-11-11 B3; the nearest.inf-gt.* and nearest.au-r1a.F64 rows from the same bytes at cf1b677, audit 2026-11-22 neon-1, killed by the oracle infinity phase INF_GROUPS) and matches EXACTLY ONCE inside its fn span (export function <fn>( to the next export function or // END GENERATED); a regen that changes it makes the row NOT-APPLIED = FAIL (R3). Run: node test/mutant-run.mjs. Cut by .handoff/p1/evidence/u4-cut-mutants.mjs. Float-only rows: nearest.rounded-tie.* (F64 / F32 / I32: no rounded tie on U32 / U16) and nearest.inf-gt.* (F64 / F32: no integer array holds Infinity, so it is equivalent on U32 / U16 / I32). nearest.au-r1a is F64 only: on F32 it is an EQUIVALENT mutant (the guard matters only when q - x overflows to +Infinity with p = -Infinity, and a difference of two float32 values never overflows a double). The upperBoundHint.* and segmentHint.tie-upper.* rows (1.1 seghint, A-S6 / A6: 7 + 1 per type) are cut from the generated Bisect.js sha256 86e5eae506ff12a026f0265a72d5c89f559f5a758a217d900522496af4660e74 (A-B4, by .handoff/ab4bb123/scratch/ab4/cut-a6.mjs); no s + 1 -> s row: that is an EQUIVALENT mutant (R0, it survives).",
   "cutFrom": "43add0b5e6ea7841ac3efaec3abd4865843369138617764314a579692590c0a6",
   "rows": [
     {
@@ -164,6 +164,62 @@
       "replace": ""
     },
     {
+      "id": "upperBoundHint.direction-le.F64",
+      "fn": "upperBoundHintF64",
+      "what": "hint direction a[h] <= x -> <",
+      "find": "if (h < hi && a[h] <= x) {",
+      "replace": "if (h < hi && a[h] < x) {"
+    },
+    {
+      "id": "upperBoundHint.gallop-right-le.F64",
+      "fn": "upperBoundHintF64",
+      "what": "right gallop a[r] <= x -> <",
+      "find": "while (r < hi && a[r] <= x)",
+      "replace": "while (r < hi && a[r] < x)"
+    },
+    {
+      "id": "upperBoundHint.b1-not-le.F64",
+      "fn": "upperBoundHintF64",
+      "what": "B1: !(a[l] <= x) -> a[l] > x",
+      "find": "while (l >= lo && !(a[l] <= x))",
+      "replace": "while (l >= lo && a[l] > x)"
+    },
+    {
+      "id": "upperBoundHint.clamp-right.F64",
+      "fn": "upperBoundHintF64",
+      "what": "right gallop clamp removed",
+      "find": "e = r > hi ? hi : r;",
+      "replace": "e = r;"
+    },
+    {
+      "id": "upperBoundHint.clamp-left.F64",
+      "fn": "upperBoundHintF64",
+      "what": "left gallop clamp removed",
+      "find": "b = l < lo ? lo : l + 1;",
+      "replace": "b = l + 1;"
+    },
+    {
+      "id": "upperBoundHint.h-nan-lo.F64",
+      "fn": "upperBoundHintF64",
+      "what": "NaN / below-lo hint clamp removed",
+      "find": "if (!(h >= lo)) h = lo;",
+      "replace": ""
+    },
+    {
+      "id": "upperBoundHint.h-hi.F64",
+      "fn": "upperBoundHintF64",
+      "what": "above-hi hint clamp removed",
+      "find": "if (h > hi) h = hi;",
+      "replace": ""
+    },
+    {
+      "id": "segmentHint.tie-upper.F64",
+      "fn": "segmentHintF64",
+      "what": "segmentHint tie: upper -> lower bound hint",
+      "find": "upperBoundHintF64(",
+      "replace": "lowerBoundHintF64("
+    },
+    {
       "id": "lowerBoundBranchless.loop-lt.F32",
       "fn": "lowerBoundBranchlessF32",
       "what": "loop compare < -> <=",
@@ -318,6 +374,62 @@
       "replace": ""
     },
     {
+      "id": "upperBoundHint.direction-le.F32",
+      "fn": "upperBoundHintF32",
+      "what": "hint direction a[h] <= x -> <",
+      "find": "if (h < hi && a[h] <= x) {",
+      "replace": "if (h < hi && a[h] < x) {"
+    },
+    {
+      "id": "upperBoundHint.gallop-right-le.F32",
+      "fn": "upperBoundHintF32",
+      "what": "right gallop a[r] <= x -> <",
+      "find": "while (r < hi && a[r] <= x)",
+      "replace": "while (r < hi && a[r] < x)"
+    },
+    {
+      "id": "upperBoundHint.b1-not-le.F32",
+      "fn": "upperBoundHintF32",
+      "what": "B1: !(a[l] <= x) -> a[l] > x",
+      "find": "while (l >= lo && !(a[l] <= x))",
+      "replace": "while (l >= lo && a[l] > x)"
+    },
+    {
+      "id": "upperBoundHint.clamp-right.F32",
+      "fn": "upperBoundHintF32",
+      "what": "right gallop clamp removed",
+      "find": "e = r > hi ? hi : r;",
+      "replace": "e = r;"
+    },
+    {
+      "id": "upperBoundHint.clamp-left.F32",
+      "fn": "upperBoundHintF32",
+      "what": "left gallop clamp removed",
+      "find": "b = l < lo ? lo : l + 1;",
+      "replace": "b = l + 1;"
+    },
+    {
+      "id": "upperBoundHint.h-nan-lo.F32",
+      "fn": "upperBoundHintF32",
+      "what": "NaN / below-lo hint clamp removed",
+      "find": "if (!(h >= lo)) h = lo;",
+      "replace": ""
+    },
+    {
+      "id": "upperBoundHint.h-hi.F32",
+      "fn": "upperBoundHintF32",
+      "what": "above-hi hint clamp removed",
+      "find": "if (h > hi) h = hi;",
+      "replace": ""
+    },
+    {
+      "id": "segmentHint.tie-upper.F32",
+      "fn": "segmentHintF32",
+      "what": "segmentHint tie: upper -> lower bound hint",
+      "find": "upperBoundHintF32(",
+      "replace": "lowerBoundHintF32("
+    },
+    {
       "id": "lowerBoundBranchless.loop-lt.U32",
       "fn": "lowerBoundBranchlessU32",
       "what": "loop compare < -> <=",
@@ -458,6 +570,62 @@
       "replace": ""
     },
     {
+      "id": "upperBoundHint.direction-le.U32",
+      "fn": "upperBoundHintU32",
+      "what": "hint direction a[h] <= x -> <",
+      "find": "if (h < hi && a[h] <= x) {",
+      "replace": "if (h < hi && a[h] < x) {"
+    },
+    {
+      "id": "upperBoundHint.gallop-right-le.U32",
+      "fn": "upperBoundHintU32",
+      "what": "right gallop a[r] <= x -> <",
+      "find": "while (r < hi && a[r] <= x)",
+      "replace": "while (r < hi && a[r] < x)"
+    },
+    {
+      "id": "upperBoundHint.b1-not-le.U32",
+      "fn": "upperBoundHintU32",
+      "what": "B1: !(a[l] <= x) -> a[l] > x",
+      "find": "while (l >= lo && !(a[l] <= x))",
+      "replace": "while (l >= lo && a[l] > x)"
+    },
+    {
+      "id": "upperBoundHint.clamp-right.U32",
+      "fn": "upperBoundHintU32",
+      "what": "right gallop clamp removed",
+      "find": "e = r > hi ? hi : r;",
+      "replace": "e = r;"
+    },
+    {
+      "id": "upperBoundHint.clamp-left.U32",
+      "fn": "upperBoundHintU32",
+      "what": "left gallop clamp removed",
+      "find": "b = l < lo ? lo : l + 1;",
+      "replace": "b = l + 1;"
+    },
+    {
+      "id": "upperBoundHint.h-nan-lo.U32",
+      "fn": "upperBoundHintU32",
+      "what": "NaN / below-lo hint clamp removed",
+      "find": "if (!(h >= lo)) h = lo;",
+      "replace": ""
+    },
+    {
+      "id": "upperBoundHint.h-hi.U32",
+      "fn": "upperBoundHintU32",
+      "what": "above-hi hint clamp removed",
+      "find": "if (h > hi) h = hi;",
+      "replace": ""
+    },
+    {
+      "id": "segmentHint.tie-upper.U32",
+      "fn": "segmentHintU32",
+      "what": "segmentHint tie: upper -> lower bound hint",
+      "find": "upperBoundHintU32(",
+      "replace": "lowerBoundHintU32("
+    },
+    {
       "id": "lowerBoundBranchless.loop-lt.U16",
       "fn": "lowerBoundBranchlessU16",
       "what": "loop compare < -> <=",
@@ -596,6 +764,62 @@
       "what": "nearest i === hi edge removed",
       "find": "if (i === hi) return hi - 1;",
       "replace": ""
+    },
+    {
+      "id": "upperBoundHint.direction-le.U16",
+      "fn": "upperBoundHintU16",
+      "what": "hint direction a[h] <= x -> <",
+      "find": "if (h < hi && a[h] <= x) {",
+      "replace": "if (h < hi && a[h] < x) {"
+    },
+    {
+      "id": "upperBoundHint.gallop-right-le.U16",
+      "fn": "upperBoundHintU16",
+      "what": "right gallop a[r] <= x -> <",
+      "find": "while (r < hi && a[r] <= x)",
+      "replace": "while (r < hi && a[r] < x)"
+    },
+    {
+      "id": "upperBoundHint.b1-not-le.U16",
+      "fn": "upperBoundHintU16",
+      "what": "B1: !(a[l] <= x) -> a[l] > x",
+      "find": "while (l >= lo && !(a[l] <= x))",
+      "replace": "while (l >= lo && a[l] > x)"
+    },
+    {
+      "id": "upperBoundHint.clamp-right.U16",
+      "fn": "upperBoundHintU16",
+      "what": "right gallop clamp removed",
+      "find": "e = r > hi ? hi : r;",
+      "replace": "e = r;"
+    },
+    {
+      "id": "upperBoundHint.clamp-left.U16",
+      "fn": "upperBoundHintU16",
+      "what": "left gallop clamp removed",
+      "find": "b = l < lo ? lo : l + 1;",
+      "replace": "b = l + 1;"
+    },
+    {
+      "id": "upperBoundHint.h-nan-lo.U16",
+      "fn": "upperBoundHintU16",
+      "what": "NaN / below-lo hint clamp removed",
+      "find": "if (!(h >= lo)) h = lo;",
+      "replace": ""
+    },
+    {
+      "id": "upperBoundHint.h-hi.U16",
+      "fn": "upperBoundHintU16",
+      "what": "above-hi hint clamp removed",
+      "find": "if (h > hi) h = hi;",
+      "replace": ""
+    },
+    {
+      "id": "segmentHint.tie-upper.U16",
+      "fn": "segmentHintU16",
+      "what": "segmentHint tie: upper -> lower bound hint",
+      "find": "upperBoundHintU16(",
+      "replace": "lowerBoundHintU16("
     },
     {
       "id": "lowerBoundBranchless.loop-lt.I32",
@@ -743,6 +967,62 @@
       "what": "nearest i === hi edge removed",
       "find": "if (i === hi) return hi - 1;",
       "replace": ""
+    },
+    {
+      "id": "upperBoundHint.direction-le.I32",
+      "fn": "upperBoundHintI32",
+      "what": "hint direction a[h] <= x -> <",
+      "find": "if (h < hi && a[h] <= x) {",
+      "replace": "if (h < hi && a[h] < x) {"
+    },
+    {
+      "id": "upperBoundHint.gallop-right-le.I32",
+      "fn": "upperBoundHintI32",
+      "what": "right gallop a[r] <= x -> <",
+      "find": "while (r < hi && a[r] <= x)",
+      "replace": "while (r < hi && a[r] < x)"
+    },
+    {
+      "id": "upperBoundHint.b1-not-le.I32",
+      "fn": "upperBoundHintI32",
+      "what": "B1: !(a[l] <= x) -> a[l] > x",
+      "find": "while (l >= lo && !(a[l] <= x))",
+      "replace": "while (l >= lo && a[l] > x)"
+    },
+    {
+      "id": "upperBoundHint.clamp-right.I32",
+      "fn": "upperBoundHintI32",
+      "what": "right gallop clamp removed",
+      "find": "e = r > hi ? hi : r;",
+      "replace": "e = r;"
+    },
+    {
+      "id": "upperBoundHint.clamp-left.I32",
+      "fn": "upperBoundHintI32",
+      "what": "left gallop clamp removed",
+      "find": "b = l < lo ? lo : l + 1;",
+      "replace": "b = l + 1;"
+    },
+    {
+      "id": "upperBoundHint.h-nan-lo.I32",
+      "fn": "upperBoundHintI32",
+      "what": "NaN / below-lo hint clamp removed",
+      "find": "if (!(h >= lo)) h = lo;",
+      "replace": ""
+    },
+    {
+      "id": "upperBoundHint.h-hi.I32",
+      "fn": "upperBoundHintI32",
+      "what": "above-hi hint clamp removed",
+      "find": "if (h > hi) h = hi;",
+      "replace": ""
+    },
+    {
+      "id": "segmentHint.tie-upper.I32",
+      "fn": "segmentHintI32",
+      "what": "segmentHint tie: upper -> lower bound hint",
+      "find": "upperBoundHintI32(",
+      "replace": "lowerBoundHintI32("
     }
   ]
 }

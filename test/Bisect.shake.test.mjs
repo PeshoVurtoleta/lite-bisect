@@ -5,12 +5,12 @@
 // What it proves:
 //   (a) for EVERY export K of Bisect.js, an esbuild bundle of `import { K } ...; globalThis.__keep = K;` defines
 //       exactly closure(K) -- K plus the kernels K calls (DEPS below, a pinned literal: lowerBoundHint* and
-//       nearest* call lowerBoundBranchless*, segment* calls upperBoundBranchless*, assertSorted calls
-//       assertRange) -- and no other export name in any form. 21 exports bundle alone; 16 carry one callee.
+//       nearest* call lowerBoundBranchless*, segment* and upperBoundHint* call upperBoundBranchless*, segmentHint* calls upperBoundHint*, assertSorted calls
+//       assertRange) -- and no other export name in any form. 21 exports bundle alone; 21 carry one callee; 5 carry two (segmentHint* -> upperBoundHint* -> upperBoundBranchless*).
 //   (b) a bare side-effect import (`import '<Bisect.js>'`) bundles to no kernel at all.
 //   (b2) esbuild reports `ignored-bare-import` for that import: the package.json `"sideEffects": false` is read
 //       and honoured. (b) alone cannot see the flag: esbuild drops unused function declarations either way.
-//   (c) the all-37 entry defines all 37 (positive row, and the "esbuild emitted nothing" guard).
+//   (c) the all-47 entry defines all 47 (positive row, and the "esbuild emitted nothing" guard).
 // Matcher (minify off, so names are not mangled): a kept name K must occur exactly once as the literal text
 // `function K(`; every `function <ident>(` declaration in the bundle (regex /\bfunction\s+([A-Za-z_$][\w$]*)\s*\(/)
 // must be a kept name; every export name NOT kept must not occur at all as an identifier PREFIX
@@ -19,7 +19,7 @@
 // names (entry-<n>.mjs in a mkdtemp dir) carry no export name.
 // ONE verdict function, shakeProblems(input) -> string[] ([] = pass), judges every real row AND every control
 // (LEDGER B5 / B7). Controls, each must return problems through shakeProblems:
-//   (c-ctl) the all-37 bundle judged as a one-kernel row -> 36 problems (the matcher sees names);
+//   (c-ctl) the all-47 bundle judged as a one-kernel row -> 46 problems (the matcher sees names);
 //   (d) a scratch copy of Bisect.js with a planted top-level `globalThis.__x = upperBoundBranchyF64;` -> the
 //       one-kernel lowerBoundBranchlessF64 bundle now carries a second kernel;
 //   (d2) a scratch copy with a planted top-level `console.log(1);` (no kernel name) -> 'top-level residue';
@@ -52,14 +52,19 @@ const SRC = ENV_SRC === undefined ? DEFAULT_SRC : ENV_SRC;
 if (!existsSync(SRC)) throw new Error('Bisect.shake: file under test does not exist: ' + SRC);
 const SRC_TEXT = readFileSync(SRC, 'utf8');
 
-const EXPECTED_COUNT = 37;
+const EXPECTED_COUNT = 47;
 // Pinned call graph (never computed from Bisect.js; row 'call graph' cross-checks it against the source text).
 const DEPS = {
     lowerBoundHintF64: ['lowerBoundBranchlessF64'], segmentF64: ['upperBoundBranchlessF64'], nearestF64: ['lowerBoundBranchlessF64'],
+    upperBoundHintF64: ['upperBoundBranchlessF64'], segmentHintF64: ['upperBoundHintF64'],
     lowerBoundHintF32: ['lowerBoundBranchlessF32'], segmentF32: ['upperBoundBranchlessF32'], nearestF32: ['lowerBoundBranchlessF32'],
+    upperBoundHintF32: ['upperBoundBranchlessF32'], segmentHintF32: ['upperBoundHintF32'],
     lowerBoundHintU32: ['lowerBoundBranchlessU32'], segmentU32: ['upperBoundBranchlessU32'], nearestU32: ['lowerBoundBranchlessU32'],
+    upperBoundHintU32: ['upperBoundBranchlessU32'], segmentHintU32: ['upperBoundHintU32'],
     lowerBoundHintU16: ['lowerBoundBranchlessU16'], segmentU16: ['upperBoundBranchlessU16'], nearestU16: ['lowerBoundBranchlessU16'],
+    upperBoundHintU16: ['upperBoundBranchlessU16'], segmentHintU16: ['upperBoundHintU16'],
     lowerBoundHintI32: ['lowerBoundBranchlessI32'], segmentI32: ['upperBoundBranchlessI32'], nearestI32: ['lowerBoundBranchlessI32'],
+    upperBoundHintI32: ['upperBoundBranchlessI32'], segmentHintI32: ['upperBoundHintI32'],
     assertSorted: ['assertRange'],
 };
 
@@ -147,7 +152,7 @@ describe('Bisect.shake: esbuild ' + ESBUILD_VERSION + ' tree-shakes ' + SRC, () 
     before(() => { dir = mkdtempSync(join(tmpdir(), 'lite-bisect-shake-')); });
     after(() => { if (dir !== '') rmSync(dir, { recursive: true, force: true }); });
 
-    it('exports: 37 export function declarations, equal to the runtime export list', () => {
+    it('exports: 47 export function declarations, equal to the runtime export list', () => {
         assert.equal(EXPORTS.length, EXPECTED_COUNT, 'export count: ' + EXPORTS.join(','));
         const declared = [...SRC_TEXT.matchAll(/^export function ([A-Za-z_$][\w$]*)\(/gm)].map((x) => x[1]).sort();
         assert.deepEqual(declared, EXPORTS);
@@ -189,11 +194,11 @@ describe('Bisect.shake: esbuild ' + ESBUILD_VERSION + ' tree-shakes ' + SRC, () 
         assert.deepEqual(probs, []);
     });
 
-    it('(c) all 37 imported -> all 37 defined', () => {
+    it('(c) all 47 imported -> all 47 defined', () => {
         assert.deepEqual(shakeProblems({ built: build(namedEntry(SRC, EXPORTS)), names: EXPORTS, keep: EXPORTS }), []);
     });
 
-    it('control (c-ctl): the all-37 bundle judged as a one-kernel row fails with 36 problems', () => {
+    it('control (c-ctl): the all-47 bundle judged as a one-kernel row fails with 46 problems', () => {
         const probs = shakeProblems({ built: build(namedEntry(SRC, EXPORTS)), names: EXPORTS, keep: ['upperBoundBranchyU16'] });
         assert.equal(probs.filter((s) => s.startsWith('not shaken: ')).length, EXPECTED_COUNT - 1, probs.join('\n'));
     });

@@ -11,9 +11,10 @@
  *             no kernel calls them. A caller error such as a bad range may return a wrong index
  *             or never return.
  *   x         a NaN query compares false everywhere: every lower / upper / hint kernel returns lo,
- *             segment returns lo - 1, nearest returns lo.
+ *             segment / segmentHint return lo - 1, nearest returns lo.
  *
  * Allocation: zero allocation where the kernel inlines into its caller, or every number argument (the query; the hint of lowerBoundHint*; lo / hi) is a Smi; a non-Smi number computed at run time or read from a typed array (a fractional query, a NaN hint read from a Float64Array, -0 for lo / hi) and passed across a call V8 does not inline is boxed by the caller: one 16 B HeapNumber per such argument on Node. For no hint pass lo or the literal NaN: neither boxes.
+ * Hinted upper kernels: the h of upperBoundHint* is a hint as for lowerBoundHint* (no hint = lo or the literal NaN). The no-hint value of segmentHint* is lo - 1 (an integer, no box); a NaN s (the literal NaN too) or a non-Smi s makes one 16 B HeapNumber on Node inside segmentHint* (s + 1 is a new double) when upperBoundHint* is not inlined into it.
  *
  * MIT (c) Zahary Shinikchiev <shinikchiev@yahoo.com>
  *
@@ -64,6 +65,24 @@ export function segmentF64(a: Float64Array, lo: number, hi: number, x: number): 
  */
 export function nearestF64(a: Float64Array, lo: number, hi: number, x: number): number;
 
+/**
+ * upper bound galloping out from the hint h: the first i in [lo, hi) with a[i] > x, else hi. NaN x -> lo.
+ * Returns exactly upperBoundBranchlessF64(a, lo, hi, x) for every integer or NaN h.
+ * For coherent streams only (each h near its answer, e.g. the previous result).
+ * h is an integer index or NaN (NaN -> lo; outside [lo, hi] clamped). A non-integer h is a caller error
+ * that may return a wrong index or never return.
+ */
+export function upperBoundHintF64(a: Float64Array, lo: number, hi: number, x: number, h: number): number;
+
+/**
+ * segment galloping out from the hint s: the last i in [lo, hi) with a[i] <= x (upper bound - 1); lo - 1 when
+ * x < a[lo], on a NaN x, on an empty range. Returns exactly segmentF64(a, lo, hi, x) for every integer or NaN s.
+ * For coherent streams only; s is the previous segment result (lo - 1 allowed). s is an integer or NaN
+ * (NaN -> as s = lo - 1; outside [lo - 1, hi - 1] clamped). A non-integer s is a caller error that may return a
+ * wrong index or never return.
+ */
+export function segmentHintF64(a: Float64Array, lo: number, hi: number, x: number, s: number): number;
+
 // --- Float32Array -----------------------------------------------------------------------------
 
 /**
@@ -104,6 +123,24 @@ export function segmentF32(a: Float32Array, lo: number, hi: number, x: number): 
  * values, the index next to x; past either end -> lo or hi - 1; an empty range -> lo; NaN x -> lo.
  */
 export function nearestF32(a: Float32Array, lo: number, hi: number, x: number): number;
+
+/**
+ * upper bound galloping out from the hint h: the first i in [lo, hi) with a[i] > x, else hi. NaN x -> lo.
+ * Returns exactly upperBoundBranchlessF32(a, lo, hi, x) for every integer or NaN h.
+ * For coherent streams only (each h near its answer, e.g. the previous result).
+ * h is an integer index or NaN (NaN -> lo; outside [lo, hi] clamped). A non-integer h is a caller error
+ * that may return a wrong index or never return.
+ */
+export function upperBoundHintF32(a: Float32Array, lo: number, hi: number, x: number, h: number): number;
+
+/**
+ * segment galloping out from the hint s: the last i in [lo, hi) with a[i] <= x (upper bound - 1); lo - 1 when
+ * x < a[lo], on a NaN x, on an empty range. Returns exactly segmentF32(a, lo, hi, x) for every integer or NaN s.
+ * For coherent streams only; s is the previous segment result (lo - 1 allowed). s is an integer or NaN
+ * (NaN -> as s = lo - 1; outside [lo - 1, hi - 1] clamped). A non-integer s is a caller error that may return a
+ * wrong index or never return.
+ */
+export function segmentHintF32(a: Float32Array, lo: number, hi: number, x: number, s: number): number;
 
 // --- Uint32Array ------------------------------------------------------------------------------
 
@@ -146,6 +183,24 @@ export function segmentU32(a: Uint32Array, lo: number, hi: number, x: number): n
  */
 export function nearestU32(a: Uint32Array, lo: number, hi: number, x: number): number;
 
+/**
+ * upper bound galloping out from the hint h: the first i in [lo, hi) with a[i] > x, else hi. NaN x -> lo.
+ * Returns exactly upperBoundBranchlessU32(a, lo, hi, x) for every integer or NaN h.
+ * For coherent streams only (each h near its answer, e.g. the previous result).
+ * h is an integer index or NaN (NaN -> lo; outside [lo, hi] clamped). A non-integer h is a caller error
+ * that may return a wrong index or never return.
+ */
+export function upperBoundHintU32(a: Uint32Array, lo: number, hi: number, x: number, h: number): number;
+
+/**
+ * segment galloping out from the hint s: the last i in [lo, hi) with a[i] <= x (upper bound - 1); lo - 1 when
+ * x < a[lo], on a NaN x, on an empty range. Returns exactly segmentU32(a, lo, hi, x) for every integer or NaN s.
+ * For coherent streams only; s is the previous segment result (lo - 1 allowed). s is an integer or NaN
+ * (NaN -> as s = lo - 1; outside [lo - 1, hi - 1] clamped). A non-integer s is a caller error that may return a
+ * wrong index or never return.
+ */
+export function segmentHintU32(a: Uint32Array, lo: number, hi: number, x: number, s: number): number;
+
 // --- Uint16Array ------------------------------------------------------------------------------
 
 /**
@@ -187,6 +242,24 @@ export function segmentU16(a: Uint16Array, lo: number, hi: number, x: number): n
  */
 export function nearestU16(a: Uint16Array, lo: number, hi: number, x: number): number;
 
+/**
+ * upper bound galloping out from the hint h: the first i in [lo, hi) with a[i] > x, else hi. NaN x -> lo.
+ * Returns exactly upperBoundBranchlessU16(a, lo, hi, x) for every integer or NaN h.
+ * For coherent streams only (each h near its answer, e.g. the previous result).
+ * h is an integer index or NaN (NaN -> lo; outside [lo, hi] clamped). A non-integer h is a caller error
+ * that may return a wrong index or never return.
+ */
+export function upperBoundHintU16(a: Uint16Array, lo: number, hi: number, x: number, h: number): number;
+
+/**
+ * segment galloping out from the hint s: the last i in [lo, hi) with a[i] <= x (upper bound - 1); lo - 1 when
+ * x < a[lo], on a NaN x, on an empty range. Returns exactly segmentU16(a, lo, hi, x) for every integer or NaN s.
+ * For coherent streams only; s is the previous segment result (lo - 1 allowed). s is an integer or NaN
+ * (NaN -> as s = lo - 1; outside [lo - 1, hi - 1] clamped). A non-integer s is a caller error that may return a
+ * wrong index or never return.
+ */
+export function segmentHintU16(a: Uint16Array, lo: number, hi: number, x: number, s: number): number;
+
 // --- Int32Array -------------------------------------------------------------------------------
 
 /**
@@ -227,6 +300,24 @@ export function segmentI32(a: Int32Array, lo: number, hi: number, x: number): nu
  * values, the index next to x; past either end -> lo or hi - 1; an empty range -> lo; NaN x -> lo.
  */
 export function nearestI32(a: Int32Array, lo: number, hi: number, x: number): number;
+
+/**
+ * upper bound galloping out from the hint h: the first i in [lo, hi) with a[i] > x, else hi. NaN x -> lo.
+ * Returns exactly upperBoundBranchlessI32(a, lo, hi, x) for every integer or NaN h.
+ * For coherent streams only (each h near its answer, e.g. the previous result).
+ * h is an integer index or NaN (NaN -> lo; outside [lo, hi] clamped). A non-integer h is a caller error
+ * that may return a wrong index or never return.
+ */
+export function upperBoundHintI32(a: Int32Array, lo: number, hi: number, x: number, h: number): number;
+
+/**
+ * segment galloping out from the hint s: the last i in [lo, hi) with a[i] <= x (upper bound - 1); lo - 1 when
+ * x < a[lo], on a NaN x, on an empty range. Returns exactly segmentI32(a, lo, hi, x) for every integer or NaN s.
+ * For coherent streams only; s is the previous segment result (lo - 1 allowed). s is an integer or NaN
+ * (NaN -> as s = lo - 1; outside [lo - 1, hi - 1] clamped). A non-integer s is a caller error that may return a
+ * wrong index or never return.
+ */
+export function segmentHintI32(a: Int32Array, lo: number, hi: number, x: number, s: number): number;
 
 // --- cold checks: one copy each, called by no kernel ------------------------------------------
 

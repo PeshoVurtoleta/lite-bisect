@@ -30,20 +30,26 @@ function fn(name) {
 function expectedFor(fam, want) {
     const kind = KERNELS[fam];
     if (kind === 'lower' || kind === 'hint') return want.lower;
-    if (kind === 'upper') return want.upper;
-    if (kind === 'segment') return want.segment;
+    if (kind === 'upper' || kind === 'uhint') return want.upper;
+    if (kind === 'segment' || kind === 'shint') return want.segment;
     if (kind === 'nearest') return want.nearest;
     throw new Error('boundary: no stated outcome for kernel kind ' + kind + ' (' + fam + ')');
 }
 
-// Every family of type T on (a, lo, hi, x); the hint runs at every h in hs.
-// want = { lower, upper, segment, nearest }; the hint must return `lower`.
+// The hinted kinds: 'hint' and 'uhint' take h; 'shint' (segmentHint) takes s = h - 1, the previous
+// SEGMENT result convention (NaN - 1 is NaN). hintArg maps one h of a list to the argument passed.
+const isHinted = (fam) => { const k = KERNELS[fam]; return k === 'hint' || k === 'uhint' || k === 'shint'; };
+const hintArg = (fam, h) => (KERNELS[fam] === 'shint' ? h - 1 : h);
+
+// Every family of type T on (a, lo, hi, x); the hinted kernels run at every h in hs (segmentHint at
+// h - 1). want = { lower, upper, segment, nearest }; lowerBoundHint returns `lower`, upperBoundHint
+// `upper`, segmentHint `segment`.
 function checkAll(T, a, lo, hi, x, want, tag, hs = [lo, hi, lo - 3, hi + 3, NaN, (lo + hi) >>> 1]) {
     const t = tag + ' ' + T + ' [' + lo + ',' + hi + ') x=' + (Object.is(x, -0) ? '-0' : x);
     for (const fam of FAMILIES) {
         const f = fn(fam + T), w = expectedFor(fam, want);
-        if (KERNELS[fam] === 'hint') {
-            for (const h of hs) assert.equal(f(a, lo, hi, x, h), w, fam + t + ' h=' + h);
+        if (isHinted(fam)) {
+            for (const h of hs) assert.equal(f(a, lo, hi, x, hintArg(fam, h)), w, fam + t + ' h=' + hintArg(fam, h));
         } else {
             assert.equal(f(a, lo, hi, x), w, fam + t);
         }
@@ -195,6 +201,34 @@ test('assertion 3: segment / nearest rows verbatim', () => {
     assert.equal(near(n, 1, 1, 2), 1);
 });
 
+// ---- seghint 1.1 literals (SPEC AA4): [1, 2, 2, 3], every type --------------------------------
+// Stated outcomes from the contract (Bisect.js header): upper = first i with a[i] > x, segment = last i
+// with a[i] <= x; on [1, 2, 2, 3] x = 2 that is 3 / 2. NaN h -> lo, an out-of-range h is clamped, so the
+// answer never depends on h; the same for s on [lo - 1, hi - 1]. Non-Smi integer hints included (2^31,
+// 2^53, 1e300, -(2^31) - 1). Each call goes through the budgeted view first (a hang is a FAIL), then on
+// the typed array; assert.equal is Object.is here, so a -0 answer fails a want of 0.
+test('AA4 literals: upperBoundHint / segmentHint on [1, 2, 2, 3] incl. non-Smi hints, NaN x, empty and -0 rows', () => {
+    // [kernel, lo, hi, x, hint, want]
+    const rows = [];
+    for (const h of [NaN, -0, Infinity, -Infinity, 2 ** 31, 2 ** 53, 1e300, -(2 ** 31) - 1, 0, 2, 3, 4]) rows.push(['upperBoundHint', 0, 4, 2, h, 3]);
+    for (const s of [NaN, -1, -0, 3, Infinity, -Infinity, 2 ** 31, 2 ** 53, -(2 ** 31) - 1, 0, 2]) rows.push(['segmentHint', 0, 4, 2, s, 2]);
+    for (const h of [NaN, 0, 2, 4, 2 ** 31]) rows.push(['upperBoundHint', 0, 4, NaN, h, 0], ['segmentHint', 0, 4, NaN, h - 1, -1]);
+    for (const h of [NaN, 2, 0, 4, -0, 2 ** 31]) rows.push(['upperBoundHint', 2, 2, 2, h, 2], ['segmentHint', 2, 2, 2, h - 1, 1]);
+    // -0 rows: lo = 0 with a -0 hint and every answer 0 (x below a[0], and the empty [0, 0)).
+    rows.push(['upperBoundHint', 0, 4, 0.5, -0, 0], ['upperBoundHint', 0, 0, 2, -0, 0], ['upperBoundHint', 0, 4, -0, -0, 0]);
+    rows.push(['segmentHint', 0, 4, 1, -0, 0], ['segmentHint', 1, 4, 1.5, -0, 0], ['segmentHint', 0, 4, -0, -0, -1]);
+    for (const T of ALL) {
+        const typed = TYPES[T].of(1, 2, 2, 3);
+        const view = budget((k) => typed[k]);
+        for (const [k, lo, hi, x, h, want] of rows) {
+            const f = fn(k + T);
+            const tag = k + T + '([1,2,2,3], ' + lo + ', ' + hi + ', ' + x + ', ' + (Object.is(h, -0) ? '-0' : h) + ')';
+            assert.equal(call(f, [view, lo, hi, x, h]), want, tag + ' on the budgeted view');
+            assert.equal(f(typed, lo, hi, x, h), want, tag);
+        }
+    }
+});
+
 // ---- caller errors ----------------------------------------------------------------------
 test('assertion 3: assertRange(F64(4)) RangeError for (0,5), (1.5,2), (3,2); undefined for (0,4)', () => {
     const ar = fn('assertRange');
@@ -268,9 +302,9 @@ test('caller errors lo > hi and NaN lo: every kernel x type returns a number (no
         for (const fam of FAMILIES) {
             const f = fn(fam + T);
             for (const [lo, hi, x] of cases) {
-                const hs = KERNELS[fam] === 'hint' ? [lo, hi, 2] : [undefined];
+                const hs = isHinted(fam) ? [lo, hi, 2] : [undefined];
                 for (const h of hs) {
-                    const args = KERNELS[fam] === 'hint' ? [lo, hi, x, h] : [lo, hi, x];
+                    const args = isHinted(fam) ? [lo, hi, x, hintArg(fam, h)] : [lo, hi, x];
                     const tag = fam + T + '(' + args.join(', ') + ')';
                     // Budgeted Proxy first: a hang throws here, before the typed call can stall.
                     assert.equal(typeof call(f, [view, ...args]), 'number', tag + ' on the budgeted view');
@@ -306,6 +340,7 @@ const cfNearest = (lo, hi, x) => {
 
 test('cap: every kernel incl. the hint returns the closed-form answer at hi - lo = 2^30 - 1', () => {
     let rows = 0;
+    const hintedCalls = {};
     for (const lo of [0, P30 + 5]) {
         const hi = lo + P30 - 1;
         assert.ok(hi <= CAP_LEN);
@@ -319,10 +354,13 @@ test('cap: every kernel incl. the hint returns the closed-form answer at hi - lo
                 const want = { lower: cfLower(lo, hi, x), upper: wu, segment: wu - 1, nearest: cfNearest(lo, hi, x) };
                 for (const fam of FAMILIES) {
                     const f = fn(fam + T), w = expectedFor(fam, want);
-                    if (KERNELS[fam] === 'hint') {
-                        // The B2 rows: hint at hi with x <= a[lo] and NaN, plus lo / mid / outside hints.
+                    if (isHinted(fam)) {
+                        // The B2 rows: hint at hi with x <= a[lo] and NaN, plus lo / mid / outside hints
+                        // (segmentHint at each minus 1): 2 lo x 15 x x 6 h = 180 calls per hinted export.
                         for (const h of [hi, lo, mid, lo - 3, hi + 3, NaN]) {
-                            assert.equal(call(f, [mono, lo, hi, x, h]), w, fam + ' ' + tag + ' h=' + h);
+                            const hh = hintArg(fam, h);
+                            assert.equal(call(f, [mono, lo, hi, x, hh]), w, fam + ' ' + tag + ' h=' + hh);
+                            hintedCalls[fam + T] = (hintedCalls[fam + T] || 0) + 1;
                         }
                     } else {
                         assert.equal(call(f, [mono, lo, hi, x]), w, fam + ' ' + tag);
@@ -333,6 +371,11 @@ test('cap: every kernel incl. the hint returns the closed-form answer at hi - lo
         }
     }
     assert.equal(rows, 2 * ALL.length * 15);
+    // 180 = 2 lo x 15 x x 6 h, for every hinted export (lowerBoundHint, upperBoundHint, segmentHint).
+    for (const fam of FAMILIES) {
+        if (!isHinted(fam)) continue;
+        for (const T of ALL) assert.equal(hintedCalls[fam + T], 180, fam + T + ' cap calls');
+    }
 });
 
 test('cap control: the read budget turns a never-returning loop into a FAIL, not a stall', () => {

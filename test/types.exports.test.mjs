@@ -134,7 +134,7 @@ function checkTypesField(pkgText) {
 test('Bisect.d.ts parity with Bisect.js: exports, arity, array types (0 problems)', () => {
     const r = compareDts(DTS_TEXT, MOD);
     assert.deepEqual(failing(r), [], JSON.stringify(r));
-    assert.equal(Object.keys(MOD).length, 37, 'the census expects 37 exports');
+    assert.equal(Object.keys(MOD).length, 47, 'the census expects 47 exports');
 });
 
 const MUTANTS = [
@@ -165,6 +165,15 @@ const MUTANTS = [
         label: 'hint h number -> any', category: 'params', name: 'lowerBoundHintU16',
         find: 'export function lowerBoundHintU16(a: Uint16Array, lo: number, hi: number, x: number, h: number)',
         repl: 'export function lowerBoundHintU16(a: Uint16Array, lo: number, hi: number, x: number, h: any)',
+    },
+    {
+        label: 'drop a hinted-upper declaration', category: 'missing', name: 'upperBoundHintU32',
+        find: 'export function upperBoundHintU32(a: Uint32Array, lo: number, hi: number, x: number, h: number): number;\n', repl: '',
+    },
+    {
+        label: 'segment hint s number -> any', category: 'params', name: 'segmentHintF32',
+        find: 'export function segmentHintF32(a: Float32Array, lo: number, hi: number, x: number, s: number)',
+        repl: 'export function segmentHintF32(a: Float32Array, lo: number, hi: number, x: number, s: any)',
     },
     {
         label: 'BisectArray widened by number[]', category: 'union', name: 'BisectArray',

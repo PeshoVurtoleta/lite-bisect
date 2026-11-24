@@ -15,7 +15,7 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as B from '../Bisect.js';
 import {
-    TYPES, TYPE_NAMES, KERNELS, census, runOracle, goldenReplay, naiveLower, naiveNearest,
+    TYPES, TYPE_NAMES, KERNELS, census, runOracle, runHintSweep, goldenReplay, naiveLower, naiveNearest,
 } from './oracle.mjs';
 
 const BISECT_PATH = fileURLToPath(new URL('../Bisect.js', import.meta.url));
@@ -154,12 +154,32 @@ const nearestWith = (le) => (a, lo, hi, x) => {
 };
 const okNear = nearestWith(true);
 const badNear = nearestWith(false);   // tie -> UPPER index
+// seghint 1.1 local hinted kernels: a LINEAR walk from the hint (not the library's gallop). NaN h -> lo,
+// h clamped to [lo, hi]; each mutant drops exactly one of those. `+ 0` turns a -0 hint into +0 (the
+// local control must never answer -0; the sweep fails a -0 answer).
+const walkUpper = (mapNaN, clampHi) => (a, lo, hi, x, h) => {
+    if (x !== x) return lo;
+    if (mapNaN && h !== h) h = lo;
+    if (h < lo) h = lo;
+    if (clampHi && h > hi) h = hi;
+    let i = h + 0;
+    while (i > lo && a[i - 1] > x) i--;
+    while (i < hi && a[i] <= x) i++;
+    return i;
+};
+const okUHint = walkUpper(true, true);
+const badUHintB1 = (a, lo, hi, x, h) => (x !== x && h >= lo && h <= hi ? h : okUHint(a, lo, hi, x, h));   // B1 mutant
+const badUHintNoHiClamp = walkUpper(true, false);
+const okSHint = (a, lo, hi, x, s) => okUHint(a, lo, hi, x, s + 1) - 1;
+const badSHintNaN = (a, lo, hi, x, s) => walkUpper(false, true)(a, lo, hi, x, s + 1) - 1;   // NaN s left unmapped
 const CONTROL_ROWS = [
     ['lowerBoundBranchy', okLower, badLower],
     ['upperBoundBranchless', okUpper, badUpper],
     ['lowerBoundHint', okHint, badHint],
     ['segment', okSeg, badSeg],
     ['nearest', okNear, badNear],
+    ['upperBoundHint', okUHint, badUHintB1],
+    ['segmentHint', okSHint, badSHintNaN],
 ];
 
 test('oracle controls: the correct local kernels pass; each local mutant is caught', () => {
@@ -177,6 +197,49 @@ test('oracle controls: the correct local kernels pass; each local mutant is caug
             for (const msg of r.msgs) assert.ok(msg.startsWith(k + T + ' '), 'a non-mutated row failed: ' + msg);
         }
     }
+});
+
+// ---- hint sweep (SPEC A-S4): the 10 seghint exports over the R0-shape fixtures ------------
+for (const T of TYPE_NAMES) {
+    test('hint sweep ' + T + ': upperBoundHint / segmentHint, every sub-range x query x hint, 0 FAIL', () => {
+        const r = runHintSweep(B, T);
+        const want = ['segmentHint' + T, 'upperBoundHint' + T];
+        assert.deepEqual(Object.keys(r.perName).sort(), want, T + ' sweep kernels run');
+        // Coverage floor (hand count, not read from a run): every type has >= 157 sub-ranges (U32:
+        // n = 0, 1, 2, 2, 5, 3, 9, 9 -> 1 + 3 + 6 + 6 + 21 + 10 + 55 + 55), >= 13 queries (SWEEP_QUERIES)
+        // and >= 14 hints (6 fixed offsets + >= 1 index + the 7 SWEEP_HINTS): > 28,000 calls per
+        // kernel, so 10,000 is a floor with slack.
+        for (const name of want) assert.ok(r.perName[name] > 10000, name + ' ran ' + r.perName[name] + ' sweep checks');
+        assert.equal(r.fails, 0, T + ' sweep: ' + r.fails + ' FAIL\n' + r.msgs.join('\n'));
+        console.log('hint sweep ' + T + ' checks ' + r.checks + ' fails ' + r.fails);
+    });
+}
+
+// Sweep controls: each local mutant must be caught, and only on its own row.
+const SWEEP_CONTROLS = [
+    ['B1 (NaN x answered with the hint)', 'upperBoundHint', badUHintB1],
+    ['no hi clamp', 'upperBoundHint', badUHintNoHiClamp],
+    ['NaN s unmapped', 'segmentHint', badSHintNaN],
+];
+test('hint sweep controls: the correct local pair passes; B1 / no hi clamp / NaN s are each caught alone', () => {
+    for (const T of TYPE_NAMES) {
+        const good = { ['upperBoundHint' + T]: okUHint, ['segmentHint' + T]: okSHint };
+        const g = runHintSweep(good, T);
+        assert.equal(g.fails, 0, 'correct local pair ' + T + '\n' + g.msgs.join('\n'));
+        assert.ok(g.checks > 0);
+        for (const [label, k, bad] of SWEEP_CONTROLS) {
+            const m = { ...good, [k + T]: bad };
+            const r = runHintSweep(m, T);
+            assert.ok(r.fails > 0, 'sweep control ' + label + ' ' + T + ' NOT caught');
+            for (const msg of r.msgs) assert.ok(msg.startsWith(k + T + ' '), label + ': a non-mutated row failed: ' + msg);
+        }
+    }
+});
+
+test('runOracle / runHintSweep / goldenReplay fail closed on an unknown or unreplayable kind', () => {
+    assert.throws(() => runHintSweep({ nearestF64: okNear }, 'F64'), /no upperBoundHint \/ segmentHint kernel/);
+    assert.throws(() => goldenReplay(B, ['upperBoundHint'], GOLDEN.seeds), /no golden stream/);
+    assert.throws(() => goldenReplay(B, ['segmentHint'], GOLDEN.seeds), /no golden stream/);
 });
 
 test('R-ORACLE: naiveNearest and the local nearest control decide rounded ties exactly (literal answers)', () => {

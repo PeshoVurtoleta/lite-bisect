@@ -1,8 +1,9 @@
 // test/gates/alloc.test.mjs -- U6 alloc-per-op gate (SPEC-p1 U6, assertion 9; P1-R1). Deterministic: no
 // clock, so no quiet lock. NOT in the npm test glob (test/*.test.mjs): run by `npm run gates` /
 // `npm run gates:local` (LITE_UTILS_DIR=../LiteUtils) on the pinned Node only.
-// Two runs of LiteUtils alloc-per-op.mjs over test/gates/alloc-bench.mjs (155 lanes = 7 kernels x 5 types x
-// 4 query classes + lowerBoundHint x 5 types x 3 hint classes, nanhint / nanlit (AU-R3) / fracnanhint (NEON-R1)),
+// Two runs of LiteUtils alloc-per-op.mjs over test/gates/alloc-bench.mjs (225 lanes = 9 kernels x 5 types x
+// 4 query classes + the 3 hinted families lowerBoundHint / upperBoundHint / segmentHint x 5 types x 3 hint classes,
+// nanhint / nanlit (AU-R3) / fracnanhint (NEON-R1)),
 // N = 1e6, K = 6, --json. The gate reads EVERY window 1..5 of every lane, never STEADY
 // and never the tool's --max (LEDGER D2: STEADY = min of windows 1..K-1 hides a later tier that boxes).
 //   run A (inlined):      --expose-gc --no-concurrent-recompilation; every lane <= 1.0 B/op in every window.
@@ -12,7 +13,12 @@
 //                         14.0..18.0 and .nanlit (Smi query, h = the literal NaN) <= 1.0 (AU-R3,
 //                         R-NANHINT-BOX: the hint is a number argument too); lowerBoundHint<T>.fracnanhint
 //                         (frac query AND NaN hint, both read from Float64Arrays: two non-Smi arguments)
-//                         28.0..36.0 = two 16 B boxes per call (NEON-R1: one box per such argument); the
+//                         28.0..36.0 = two 16 B boxes per call (NEON-R1: one box per such argument);
+//                         upperBoundHint<T> has lowerBoundHint<T>'s ranges; segmentHint<T> (seghint 1.1, SPEC B-S3:
+//                         s + 1 inside the wrapper is one more number crossing its non-inlined call into
+//                         upperBoundHint<T>, so a non-Smi s boxes twice) .nanhint 28.0..36.0, .nanlit 14.0..18.0,
+//                         .fracnanhint 44.0..52.0 (x, s and s + 1: three boxes); its smi / frac / big / nan lanes
+//                         keep the class ranges (s is a Smi there); the
 //                         bench writes a %GetOptimizationStatus tier file (LITE_BISECT_TIER_FILE): every lane
 //                         and every kernel must carry the TurboFan bits calibrated in that process, and the
 //                         run must have both no-inlining flags, else NO VERDICT = FAIL (LEDGER law 8).
@@ -31,8 +37,10 @@
 // keyed on the tool's --json `signal` (Q-AP-LB (a), LiteUtils LEDGER #128, a field never a version): absent = the old
 // STEADY tool, exit 0 + PASS; "space-used-paired" = the new PEAK tool, exit 1 + FAIL; any other = NO VERDICT;
 // a never-optimized lane is refused by the tier check; run A's numbers fail run B's floor and run B's
-// numbers fail run A's ceiling; a two-box lane's run B numbers fail the one-box range and one-box numbers fail
-// the two-box range (NEON-R1); a broken calibration / a missing flag / a missing tier file / a noisy or
+// numbers fail run A's ceiling on exactly the lanes whose run B floor is > 1.0 (170); on each of the 15 hinted
+// nanhint / fracnanhint pairs the fracnanhint lane's run B numbers fail the nanhint range and the nanhint numbers
+// fail the fracnanhint range (NEON-R1, generalised in seghint 1.1); planted rows just outside each segmentHint range
+// fail that row alone, just inside pass; a broken calibration / a missing flag / a missing tier file / a noisy or
 // missing empty lane is NO VERDICT; a missing or extra lane row, or a non-number window (the tool's --json
 // writes NaN as null), is a FAIL row; a negative empty-lane window read back from JSON is NO VERDICT (neon-3);
 // no LiteUtils -> NO VERDICT (judged by luVerdict) and a non-zero exit. Both runs are judged
@@ -54,7 +62,11 @@ const K = 6;
 const WARM = 5000000;
 // Assertion 9 (SPEC-p1 section 4), typed here, never read from a run:
 const CLASSES = ['smi', 'frac', 'big', 'nan'];
-const HINT_CLASSES = { lowerBoundHint: ['nanhint', 'nanlit', 'fracnanhint'] };   // AU-R3 + NEON-R1: extra classes of one kernel
+const HINT_CLASSES = {   // AU-R3 + NEON-R1: extra classes of the hinted families (seghint 1.1 adds the 2 new families)
+    lowerBoundHint: ['nanhint', 'nanlit', 'fracnanhint'],
+    upperBoundHint: ['nanhint', 'nanlit', 'fracnanhint'],
+    segmentHint: ['nanhint', 'nanlit', 'fracnanhint'],
+};
 const BOXED = ['frac', 'big', 'nan', 'nanhint'];                  // run B reads one box per call
 const BOXED2 = ['fracnanhint'];                                   // run B reads two boxes per call (NEON-R1)
 const NANLIT_MAX = 1.0;
@@ -64,6 +76,15 @@ const BOX_MIN = 14.0;
 const BOX_MAX = 18.0;
 const BOX2_MIN = 28.0;   // NEON-R1: two non-Smi arguments across a non-inlined call = 2 x 16 B (measured 32 B/op)
 const BOX2_MAX = 36.0;
+const BOX3_MIN = 44.0;   // seghint 1.1 (SPEC B-S3): segmentHint<T>.fracnanhint = x, s and s + 1 across non-inlined calls = 3 x 16 B
+const BOX3_MAX = 52.0;
+// Per-family run B ranges that differ from the class range (SPEC B-S3, typed from the mechanism, confirmed by BB0 run B,
+// never read from a run, LEDGER law 9). A family or class not named here takes the class range; upperBoundHint<T>
+// takes lowerBoundHint<T>'s (the class ranges). segmentHint<T>: s + 1 is a new number crossing the call into
+// upperBoundHint<T>, so a non-Smi s boxes once at the caller and once inside the wrapper.
+const FAMILY_RANGES = {
+    segmentHint: { nanhint: [BOX2_MIN, BOX2_MAX], nanlit: [BOX_MIN, BOX_MAX], fracnanhint: [BOX3_MIN, BOX3_MAX] },
+};
 const FLAGS_A = ['--expose-gc', '--no-concurrent-recompilation'];
 const NO_INLINE = ['--no-turbo-inlining', '--no-maglev-inlining'];
 const FLAGS_B = [...FLAGS_A, ...NO_INLINE, '--allow-natives-syntax'];
@@ -86,11 +107,14 @@ const HARNESS_MAX = 1.0;
 const classOf = (lane) => lane.slice(lane.lastIndexOf('.') + 1);
 const kernelOf = (lane) => lane.slice(0, lane.lastIndexOf('.'));
 const KERNEL_NAMES = [...new Set(LANES.map(kernelOf))].sort();
+const familyOf = (lane) => { const k = kernelOf(lane); for (const t of TYPE_NAMES) if (k.endsWith(t)) return k.slice(0, -t.length); return k; };
 
 // ---- pure checkers ------------------------------------------------------------------------------
 export const expectInlined = () => [0, INLINED_MAX];
 export const expectNotInlined = (lane) => {
     const c = classOf(lane);
+    const fam = familyOf(lane);
+    if (Object.hasOwn(FAMILY_RANGES, fam) && Object.hasOwn(FAMILY_RANGES[fam], c)) return [...FAMILY_RANGES[fam][c]];
     return c === 'smi' ? [0, SMI_MAX] : c === 'nanlit' ? [0, NANLIT_MAX] : BOXED.includes(c) ? [BOX_MIN, BOX_MAX]
         : BOXED2.includes(c) ? [BOX2_MIN, BOX2_MAX] : [NaN, NaN];
 };
@@ -239,15 +263,29 @@ test('census: both gate files exist and npm run gates names them (a missing name
     assert.deepEqual(missingGateFiles(), []);
 });
 
-test('census: alloc-bench lanes == KERNELS x TYPE_NAMES x CLASSES (140) + lowerBoundHint x TYPE_NAMES x nanhint / nanlit / fracnanhint (15)', async () => {
+test('census: alloc-bench lanes == KERNELS x TYPE_NAMES x CLASSES (180) + lowerBoundHint / upperBoundHint / segmentHint x TYPE_NAMES x nanhint / nanlit / fracnanhint (45)', async () => {
     const m = await import(BENCH);
     const c = m.census(CLASSES, HINT_CLASSES);
     assert.deepEqual(c.got, [...LANES, HARNESS].sort());
     assert.deepEqual(c.expected, LANES);
-    assert.equal(LANES.length, 155);
-    assert.equal(LANES.filter((l) => /^lowerBoundHint(F64|F32|U32|U16|I32)\.nan(hint|lit)$/.test(l)).length, 10);
-    assert.equal(LANES.filter((l) => /^lowerBoundHint(F64|F32|U32|U16|I32)\.fracnanhint$/.test(l)).length, 5);
-    for (const l of LANES.filter((x) => classOf(x) === 'fracnanhint')) assert.deepEqual(expectNotInlined(l), [28, 36], l);
+    assert.equal(LANES.length, 225);
+    assert.equal(KERNEL_NAMES.length, 45);
+    assert.equal(LANES.filter((l) => /^(lowerBoundHint|upperBoundHint|segmentHint)(F64|F32|U32|U16|I32)\.nan(hint|lit)$/.test(l)).length, 30);
+    assert.equal(LANES.filter((l) => /^(lowerBoundHint|upperBoundHint|segmentHint)(F64|F32|U32|U16|I32)\.fracnanhint$/.test(l)).length, 15);
+    // run B ranges of the hinted families, typed here as literals (SPEC B-S3), lane by lane against expectNotInlined
+    const TYPED = {
+        lowerBoundHint: { smi: [0, 1], frac: [14, 18], big: [14, 18], nan: [14, 18], nanhint: [14, 18], nanlit: [0, 1], fracnanhint: [28, 36] },
+        upperBoundHint: { smi: [0, 1], frac: [14, 18], big: [14, 18], nan: [14, 18], nanhint: [14, 18], nanlit: [0, 1], fracnanhint: [28, 36] },
+        segmentHint: { smi: [0, 1], frac: [14, 18], big: [14, 18], nan: [14, 18], nanhint: [28, 36], nanlit: [14, 18], fracnanhint: [44, 52] },
+    };
+    let typedN = 0;
+    for (const l of LANES) {
+        const f = familyOf(l);
+        if (!Object.hasOwn(TYPED, f)) continue;
+        assert.deepEqual(expectNotInlined(l), TYPED[f][classOf(l)], l);
+        typedN++;
+    }
+    assert.equal(typedN, 105);
     assert.throws(() => m.census(CLASSES, { noSuchKernel: ['x'] }), /unknown kernel/);
     for (const l of LANES) assert.ok(expectNotInlined(l).every(Number.isFinite), 'no run B range for ' + l);
 });
@@ -264,7 +302,7 @@ test('assertion 9a: inlined, every lane <= 1.0 B/op in every window 1..5', () =>
     assert.deepEqual(judge(RUN_A.rows, expectInlined), { noVerdict: null, failing: [] });
 });
 
-test('assertion 9b: --no-turbo-inlining --no-maglev-inlining, frac / big / nan / nanhint 14.0..18.0, fracnanhint 28.0..36.0, smi / nanlit <= 1.0 in every window 1..5, tier TurboFan', () => {
+test('assertion 9b: --no-turbo-inlining --no-maglev-inlining, frac / big / nan / nanhint 14.0..18.0, fracnanhint 28.0..36.0, smi / nanlit <= 1.0; segmentHint<T> nanhint 28.0..36.0, nanlit 14.0..18.0, fracnanhint 44.0..52.0 in every window 1..5, tier TurboFan', () => {
     needLU();
     const tierFile = join(TMP, 'tier-b.json');
     RUN_B = runJson(BENCH, FLAGS_B, { env: { LITE_BISECT_TIER_FILE: tierFile } });
@@ -425,38 +463,99 @@ test('control: a never-optimized lane in run B is refused by the tier check (law
 
 test('control: run A numbers fail run B ranges and run B numbers fail run A ceiling (both checks see the box)', () => {
     assert.ok(RUN_A && RUN_B, 'NO VERDICT: run A / run B did not complete');
-    const boxed = LANES.filter((l) => BOXED.includes(classOf(l)) || BOXED2.includes(classOf(l)));   // 5 nanhint + 5 fracnanhint, never nanlit
-    assert.equal(boxed.filter((l) => classOf(l) === 'nanhint').length, 5);
-    assert.equal(boxed.filter((l) => classOf(l) === 'fracnanhint').length, 5);
+    // The boxed set is derived from each lane's run B range: floor > the run A ceiling 1.0 = run B expects a box there.
+    const boxed = LANES.filter((l) => expectNotInlined(l)[0] > INLINED_MAX);
+    // Typed per-class arithmetic (SPEC B-S3): frac / big / nan 3 x 9 families x 5 types = 135; nanhint 3 hinted families
+    // x 5 = 15; fracnanhint 15; nanlit segmentHint only = 5 (lowerBoundHint / upperBoundHint nanlit stay unboxed); smi 0.
+    const perClass = (c) => boxed.filter((l) => classOf(l) === c).length;
+    assert.deepEqual([perClass('smi'), perClass('frac'), perClass('big'), perClass('nan'), perClass('nanhint'), perClass('nanlit'), perClass('fracnanhint')],
+        [0, 45, 45, 45, 15, 5, 15]);
+    assert.deepEqual(boxed.filter((l) => classOf(l) === 'nanlit').map(familyOf), Array(5).fill('segmentHint'));
+    assert.equal(boxed.length, 170);
     assert.deepEqual(failing(checkWindows(laneRows(RUN_A.rows), LANES, expectNotInlined)), boxed, 'B floor 14.0 did not catch an unboxed lane');
     assert.deepEqual(failing(checkWindows(laneRows(RUN_B.rows), LANES, expectInlined)), boxed, 'A ceiling 1.0 did not catch a boxed lane');
 });
 
-test('control: NEON-R1 -- run B two-box numbers fail the one-box range and one-box numbers fail the two-box range (real rows, through judge)', () => {
+test('control: NEON-R1 swap -- on 15 pairs (5 types x 3 hinted families) run B fracnanhint numbers fail the nanhint range and nanhint numbers fail the fracnanhint range (real rows, through judge)', () => {
     assert.ok(RUN_B && TIER_B, 'NO VERDICT: run B did not complete');
     const clone = (x) => JSON.parse(JSON.stringify(x));
-    const two = LANES.filter((l) => classOf(l) === 'fracnanhint');
-    const one = two.map((l) => kernelOf(l) + '.nanhint');
-    assert.equal(two.length, 5);
-    for (const l of two) {
-        const w = RUN_B.rows.find((r) => r.lane === l).windows;
-        console.log('# C-box2 B ' + l + ' w0..' + (K - 1) + ' ' + w.map(f2).join(' ') + ' | [' + BOX2_MIN + ', ' + BOX2_MAX + ']');
+    // per pair the fracnanhint lane carries one more box than its nanhint sibling (lower / upper 32 vs 16,
+    // segmentHint 48 vs 32), so the two ranges are disjoint and a swap must fail both ways
+    const fnh = LANES.filter((l) => classOf(l) === 'fracnanhint');
+    const nh = fnh.map((l) => kernelOf(l) + '.nanhint');
+    assert.equal(fnh.length, 15);
+    assert.deepEqual([...new Set(fnh.map(familyOf))].sort(), ['lowerBoundHint', 'segmentHint', 'upperBoundHint']);
+    for (const l of nh) assert.ok(LANES.includes(l), 'no nanhint sibling ' + l);
+    for (let i = 0; i < fnh.length; i++) {
+        const w2 = RUN_B.rows.find((r) => r.lane === fnh[i]).windows;
+        const w1 = RUN_B.rows.find((r) => r.lane === nh[i]).windows;
+        console.log('# C-swap B ' + fnh[i] + ' w0..' + (K - 1) + ' ' + w2.map(f2).join(' ') + ' [' + expectNotInlined(fnh[i]) + '] | ' +
+            nh[i] + ' ' + w1.map(f2).join(' ') + ' [' + expectNotInlined(nh[i]) + ']');
     }
-    // two-box numbers judged as a one-box lane: the fracnanhint rows' windows written into the nanhint rows
+    // fracnanhint numbers judged as the nanhint lane: the fracnanhint rows' windows written into the nanhint rows
     const r1 = clone(RUN_B.rows);
-    for (let i = 0; i < two.length; i++) r1.find((r) => r.lane === one[i]).windows = clone(RUN_B.rows.find((r) => r.lane === two[i]).windows);
+    for (let i = 0; i < fnh.length; i++) r1.find((r) => r.lane === nh[i]).windows = clone(RUN_B.rows.find((r) => r.lane === fnh[i]).windows);
     const v1 = judge(r1, expectNotInlined, clone(TIER_B));
     assert.equal(v1.noVerdict, null);
-    assert.deepEqual(v1.failing, [...one].sort(), 'BOX_MAX ' + BOX_MAX + ' did not catch a two-box reading');
-    // one-box numbers judged as a two-box lane
+    assert.deepEqual(v1.failing, [...nh].sort(), 'a nanhint range did not catch its fracnanhint reading');
+    // nanhint numbers judged as the fracnanhint lane
     const r2 = clone(RUN_B.rows);
-    for (let i = 0; i < two.length; i++) r2.find((r) => r.lane === two[i]).windows = clone(RUN_B.rows.find((r) => r.lane === one[i]).windows);
+    for (let i = 0; i < fnh.length; i++) r2.find((r) => r.lane === fnh[i]).windows = clone(RUN_B.rows.find((r) => r.lane === nh[i]).windows);
     const v2 = judge(r2, expectNotInlined, clone(TIER_B));
     assert.equal(v2.noVerdict, null);
-    assert.deepEqual(v2.failing, [...two].sort(), 'BOX2_MIN ' + BOX2_MIN + ' did not catch a one-box reading');
-    // the same through checkWindows with the one-box range forced on the real two-box rows
-    const oneBox = () => [BOX_MIN, BOX_MAX];
-    assert.deepEqual(failing(checkWindows(laneRows(RUN_B.rows).filter((r) => two.includes(r.lane)), two, oneBox)), [...two].sort());
+    assert.deepEqual(v2.failing, [...fnh].sort(), 'a fracnanhint range did not catch its nanhint reading');
+    // the same through checkWindows with each pair's nanhint range forced on the real fracnanhint rows
+    const nhRange = (l) => expectNotInlined(kernelOf(l) + '.nanhint');
+    assert.deepEqual(failing(checkWindows(laneRows(RUN_B.rows).filter((r) => fnh.includes(r.lane)), fnh, nhRange)), [...fnh].sort());
+});
+
+test('control: segmentHint<T> run B ranges (SPEC B-S3), planted rows (runs without LiteUtils): a value just outside each range fails that row alone, just inside passes; the ranges are kernel-aware', () => {
+    const row = (lane, w) => ({ lane, windows: w });
+    const PLANT = [['nanhint', 28, 36], ['nanlit', 14, 18], ['fracnanhint', 44, 52]];   // typed literals (B-S3)
+    const lanes = [];
+    const span = {};
+    for (const t of TYPE_NAMES) for (const [c, lo, hi] of PLANT) { const l = 'segmentHint' + t + '.' + c; lanes.push(l); span[l] = [lo, hi]; }
+    lanes.sort();
+    for (const l of lanes) assert.ok(LANES.includes(l), 'not in the roster: ' + l);
+    const base = () => lanes.map((l) => row(l, Array(K).fill((span[l][0] + span[l][1]) / 2)));
+    assert.deepEqual(failing(checkWindows(base(), lanes, expectNotInlined)), [], 'mid-range rows pass');
+    let n = 0;
+    for (const l of lanes) {
+        const [lo, hi] = span[l];
+        for (const [v, want] of [[lo - 0.01, [l]], [hi + 0.01, [l]], [lo, []], [hi, []]]) {
+            for (let k = 1; k < K; k++) {
+                const rows = base();
+                rows.find((r) => r.lane === l).windows[k] = v;
+                assert.deepEqual(failing(checkWindows(rows, lanes, expectNotInlined)), want, l + ' window ' + k + ' = ' + v);
+                n++;
+            }
+        }
+        const r0 = base(); r0.find((r) => r.lane === l).windows[0] = hi + 100;
+        assert.deepEqual(failing(checkWindows(r0, lanes, expectNotInlined)), [], 'window 0 must not be read: ' + l);
+    }
+    console.log('# C-seghint planted ' + n + ' rows over ' + lanes.length + ' lanes');
+    assert.equal(n, 300);
+    // kernel-aware: the same reading is judged by the lane's family (lower / upper keep the class ranges)
+    const one = (lane, v) => failing(checkWindows([row(lane, Array(K).fill(v))], [lane], expectNotInlined));
+    for (const t of TYPE_NAMES) {
+        for (const f of ['lowerBoundHint', 'upperBoundHint']) {
+            assert.deepEqual(one(f + t + '.nanhint', 16), [], f + t + '.nanhint 16');
+            assert.deepEqual(one(f + t + '.nanhint', 32), [f + t + '.nanhint']);
+            assert.deepEqual(one(f + t + '.nanlit', 0), [], f + t + '.nanlit 0');
+            assert.deepEqual(one(f + t + '.nanlit', 16), [f + t + '.nanlit']);
+            assert.deepEqual(one(f + t + '.fracnanhint', 32), [], f + t + '.fracnanhint 32');
+            assert.deepEqual(one(f + t + '.fracnanhint', 48), [f + t + '.fracnanhint']);
+        }
+        const s = 'segmentHint' + t;
+        assert.deepEqual(one(s + '.nanhint', 16), [s + '.nanhint']);
+        assert.deepEqual(one(s + '.nanlit', 0), [s + '.nanlit'], 'a segmentHint nanlit that reads no box fails');
+        assert.deepEqual(one(s + '.fracnanhint', 32), [s + '.fracnanhint']);
+        for (const c of CLASSES) assert.deepEqual(expectNotInlined(s + '.' + c), expectNotInlined('segment' + t + '.' + c), s + '.' + c + ' keeps the class range');
+        for (const c of [...CLASSES, 'nanhint', 'nanlit', 'fracnanhint']) {
+            assert.deepEqual(expectNotInlined('upperBoundHint' + t + '.' + c), expectNotInlined('lowerBoundHint' + t + '.' + c), 'upperBoundHint' + t + '.' + c);
+        }
+    }
+    assert.deepEqual(expectNotInlined('segmentF64.nanlit'), [0, NANLIT_MAX], 'the segment family is not segmentHint');
 });
 
 test('control: the checkers fail closed (missing row, extra row, NaN, short windows, tier file broken)', () => {

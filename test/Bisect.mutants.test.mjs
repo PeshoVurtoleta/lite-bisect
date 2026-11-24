@@ -97,7 +97,7 @@ test('mutants.json: every kernel x type has >= 1 row; ids unique; no inert row',
         extra += fns.length;
     }
     assert.equal(SPEC.rows.length, perType[0] * TYPES.length + extra);
-    assert.equal(SPEC.rows.length, 106);
+    assert.equal(SPEC.rows.length, 146);
 });
 
 test('live: every row KILLED (killed === rows), every unmutated control PASS', async () => {

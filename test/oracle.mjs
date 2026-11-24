@@ -24,6 +24,8 @@ export const KERNELS = {
     lowerBoundHint: 'hint',
     segment: 'segment',
     nearest: 'nearest',
+    upperBoundHint: 'uhint',     // seghint 1.1: upper, galloping from h (NaN h -> lo; clamped to [lo, hi])
+    segmentHint: 'shint',        // seghint 1.1: segment, s = the previous segment result (lo - 1 .. hi - 1)
 };
 // Exports with no oracle row here: checked row by row in test/Bisect.boundary.test.mjs.
 export const COVERED_ELSEWHERE = {
@@ -257,7 +259,9 @@ export function census(keys) {
 // Runs every <kernel><T> function present in `mod` for array type T against the naive
 // definitions. Rounds 0..69: n = round (every sub-range for n <= 24, [0, n] + 20 random
 // above); then `bigRounds` rounds with n = 1 + rnd() * 300. Hints per (range, x), the
-// draft-check list: lo, hi, lo - 3, hi + 3, NaN, a random h in [lo, hi], the oracle answer.
+// draft-check list: lo, hi, lo - 3, hi + 3, NaN, a random h in [lo, hi], the oracle answer
+// (lowerBoundHint, vs naiveLower); upperBoundHint adds the upper answer as an 8th hint (vs naiveUpper)
+// and segmentHint takes each of the 8 minus 1 (vs naiveSegment), from the same random h.
 // Then, when `mod` has a nearest kernel, the rounded-tie phase (genTieCases, opts.tieDraws pairs)
 // and, for F64 / F32, the infinity phase (INF_GROUPS literal answers + every sub-range x INF_QUERIES).
 // Returns { checks, fails, msgs, perName, roundedTies } -- a function in `mod` that ran 0 checks
@@ -266,7 +270,7 @@ export function runOracle(mod, T, seed, opts = {}) {
     const smallRounds = opts.smallRounds ?? 70;
     const bigRounds = opts.bigRounds ?? 0;
     const nMax = opts.nMax ?? 300;
-    const lowers = [], uppers = [], segs = [], nears = [], hints = [];
+    const lowers = [], uppers = [], segs = [], nears = [], hints = [], uhints = [], shints = [];
     const perName = {};
     for (const k of Object.keys(mod)) {
         const m = NAME_RE.exec(k);
@@ -276,8 +280,16 @@ export function runOracle(mod, T, seed, opts = {}) {
         perName[k] = 0;
         const row = [k, fn];
         const kind = KERNELS[m[1]];
-        (kind === 'lower' ? lowers : kind === 'upper' ? uppers : kind === 'segment' ? segs
-            : kind === 'nearest' ? nears : hints).push(row);
+        // Every kind is dispatched by name; an unknown kind THROWS (fail closed: a roster kind with no
+        // oracle row is never run as some other row).
+        if (kind === 'lower') lowers.push(row);
+        else if (kind === 'upper') uppers.push(row);
+        else if (kind === 'segment') segs.push(row);
+        else if (kind === 'nearest') nears.push(row);
+        else if (kind === 'hint') hints.push(row);
+        else if (kind === 'uhint') uhints.push(row);
+        else if (kind === 'shint') shints.push(row);
+        else throw new Error('runOracle: no oracle row for kernel kind ' + kind + ' (' + k + ')');
     }
     const rnd = makeRng(seed);
     let checks = 0, fails = 0;
@@ -334,6 +346,37 @@ export function runOracle(mod, T, seed, opts = {}) {
                     g = fn(a, lo, hi, x, hs6); checks++; if (g !== wl) bad(name, g, wl, n, lo, hi, x, hs6);
                     perName[name] += 7;
                 }
+                // seghint 1.1: NO new rnd draw (the stream of the 35 older kernels is unchanged); the
+                // same hr. upperBoundHint: hints lo, hi, lo - 3, hi + 3, NaN, hr, wl, wu -> naiveUpper.
+                // segmentHint: s = each of those minus 1 (NaN - 1 is NaN) -> naiveSegment.
+                for (let k = 0; k < uhints.length; k++) {
+                    const fn = uhints[k][1], name = uhints[k][0];
+                    const hs0 = lo, hs1 = hi, hs2 = lo - 3, hs3 = hi + 3, hs4 = NaN, hs5 = hr, hs6 = wl, hs7 = wu;
+                    let g;
+                    g = fn(a, lo, hi, x, hs0); checks++; if (g !== wu) bad(name, g, wu, n, lo, hi, x, hs0);
+                    g = fn(a, lo, hi, x, hs1); checks++; if (g !== wu) bad(name, g, wu, n, lo, hi, x, hs1);
+                    g = fn(a, lo, hi, x, hs2); checks++; if (g !== wu) bad(name, g, wu, n, lo, hi, x, hs2);
+                    g = fn(a, lo, hi, x, hs3); checks++; if (g !== wu) bad(name, g, wu, n, lo, hi, x, hs3);
+                    g = fn(a, lo, hi, x, hs4); checks++; if (g !== wu) bad(name, g, wu, n, lo, hi, x, hs4);
+                    g = fn(a, lo, hi, x, hs5); checks++; if (g !== wu) bad(name, g, wu, n, lo, hi, x, hs5);
+                    g = fn(a, lo, hi, x, hs6); checks++; if (g !== wu) bad(name, g, wu, n, lo, hi, x, hs6);
+                    g = fn(a, lo, hi, x, hs7); checks++; if (g !== wu) bad(name, g, wu, n, lo, hi, x, hs7);
+                    perName[name] += 8;
+                }
+                for (let k = 0; k < shints.length; k++) {
+                    const fn = shints[k][1], name = shints[k][0];
+                    const s0 = lo - 1, s1 = hi - 1, s2 = lo - 4, s3 = hi + 2, s4 = NaN, s5 = hr - 1, s6 = wl - 1, s7 = wu - 1;
+                    let g;
+                    g = fn(a, lo, hi, x, s0); checks++; if (g !== ws) bad(name, g, ws, n, lo, hi, x, s0);
+                    g = fn(a, lo, hi, x, s1); checks++; if (g !== ws) bad(name, g, ws, n, lo, hi, x, s1);
+                    g = fn(a, lo, hi, x, s2); checks++; if (g !== ws) bad(name, g, ws, n, lo, hi, x, s2);
+                    g = fn(a, lo, hi, x, s3); checks++; if (g !== ws) bad(name, g, ws, n, lo, hi, x, s3);
+                    g = fn(a, lo, hi, x, s4); checks++; if (g !== ws) bad(name, g, ws, n, lo, hi, x, s4);
+                    g = fn(a, lo, hi, x, s5); checks++; if (g !== ws) bad(name, g, ws, n, lo, hi, x, s5);
+                    g = fn(a, lo, hi, x, s6); checks++; if (g !== ws) bad(name, g, ws, n, lo, hi, x, s6);
+                    g = fn(a, lo, hi, x, s7); checks++; if (g !== ws) bad(name, g, ws, n, lo, hi, x, s7);
+                    perName[name] += 8;
+                }
             }
         }
     }
@@ -379,6 +422,115 @@ export function runOracle(mod, T, seed, opts = {}) {
     return { checks, fails, msgs, perName, roundedTies };
 }
 
+// ---- hint sweep (seghint 1.1, SPEC A-S4): upperBoundHint / segmentHint, deterministic ----------
+// Literal fixtures in the R0 shape (.handoff/research/seghint/r0-oracle.mjs): duplicates, all-equal,
+// n = 0 / 1 / 2, +-Infinity and -0 / +0 (float types), the type extremes. Every sub-range [lo, hi) of
+// every fixture; queries = SWEEP_QUERIES plus, per stored value v (taken as v + 0, so a stored -0
+// adds +0 queries and the only -0 query is the one in SWEEP_QUERIES), v, v +- 0.5, v +- 1 and the next
+// double up / down; hints = lo - 100, lo - 2, lo - 1, every index lo .. hi, hi + 1, hi + 2, hi + 100
+// plus SWEEP_HINTS. upperBoundHint(h) is checked against naiveUpper, segmentHint(s) against
+// naiveSegment with s running over the same list (it spans lo - 1 .. hi - 1 and both clamp sides).
+// A -0 answer is a FAIL even where it === the oracle's 0. Fail closed: throws unless the run saw a
+// -0 query, a duplicate range, an empty range and (float types) a stored +Infinity and -Infinity;
+// throws if the oracle ever breaks naiveSegment === naiveUpper - 1 or answers -0.
+const F64MAX = 1.7976931348623157e308, F32MAX = 3.4028234663852886e38;
+export const SWEEP_FIXTURES = {
+    F64: [[], [7.25], [1, 2], [2, 2], [5, 5, 5, 5, 5], [-0, 0, -0, 0],
+        [-Infinity, -F64MAX, -1, -0, 0, 5e-324, 0.5, 1, 1, 1, 2, F64MAX, Infinity],
+        [-Infinity, -Infinity, 0, Infinity, Infinity], [-3, -3, -1.5, 0, 0, 0, 2.25, 2.25, 4, 9, 9]],
+    F32: [[], [7.25], [1, 2], [2, 2], [5, 5, 5, 5, 5], [-0, 0, -0, 0],
+        [-Infinity, -F32MAX, -1, -0, 0, 2 ** -149, 0.5, 1, 1, 1, 2, F32MAX, Infinity],
+        [-Infinity, -Infinity, 0, Infinity, Infinity], [-3, -3, -1.5, 0, 0, 0, 2.25, 2.25, 4, 9, 9]],
+    U32: [[], [3], [1, 2], [2, 2], [5, 5, 5, 5, 5], [0, 0, 1],
+        [0, 1, 1, 2, 2147483647, 2147483648, 4294967294, 4294967295, 4294967295], [10, 10, 11, 13, 13, 13, 14, 20, 20]],
+    U16: [[], [3], [1, 2], [2, 2], [7, 7, 7, 7, 7], [0, 0, 1],
+        [0, 1, 2, 3, 7, 7, 7, 100, 65534, 65535, 65535], [10, 10, 11, 13, 13, 13, 14, 20, 20]],
+    I32: [[], [3], [1, 2], [2, 2], [-5, -5, -5, -5, -5], [0, 0, 1],
+        [-2147483648, -2147483648, -5, -5, -1, 0, 0, 1, 2147483646, 2147483647], [-20, -20, -19, -17, -17, -17, -16, -10, -10]],
+};
+export const SWEEP_QUERIES = [NaN, -Infinity, Infinity, -0, 0, 5e-324, -5e-324, 0.5, -0.5, 1e300, -1e300,
+    4294967296, -2147483649];
+export const SWEEP_HINTS = [NaN, -Infinity, Infinity, -0, 2147483648, -2147483649, 9007199254740992];
+const fmtNum = (v) => (Object.is(v, -0) ? '-0' : String(v));
+const pushNew = (list, v) => { for (let i = 0; i < list.length; i++) if (Object.is(list[i], v)) return; list.push(v); };
+
+export function runHintSweep(mod, T) {
+    if (!Object.prototype.hasOwnProperty.call(SWEEP_FIXTURES, T)) throw new RangeError('runHintSweep: unknown type ' + T);
+    const ups = [], segs = [], perName = {};
+    for (const k of Object.keys(mod)) {
+        const m = NAME_RE.exec(k);
+        if (!m || m[2] !== T) continue;
+        const kind = KERNELS[m[1]];
+        if (kind !== 'uhint' && kind !== 'shint') continue;
+        if (typeof mod[k] !== 'function') throw new TypeError(k + ' is not a function');
+        perName[k] = 0;
+        (kind === 'uhint' ? ups : segs).push([k, mod[k]]);
+    }
+    if (ups.length + segs.length === 0) throw new Error('runHintSweep: no upperBoundHint / segmentHint kernel of type ' + T);
+    const isFloat = T === 'F64' || T === 'F32';
+    const seen = { negZeroQuery: false, dupRange: false, emptyRange: false, posInf: false, negInf: false };
+    let checks = 0, fails = 0;
+    const msgs = [];
+    const bad = (name, got, want, n, lo, hi, x, h) => {
+        fails++;
+        if (msgs.length < 8) {
+            msgs.push(name + ' n=' + n + ' [' + lo + ',' + hi + ') x=' + fmtNum(x) + ' h=' + fmtNum(h)
+                + ' got ' + fmtNum(got) + ' want ' + want);
+        }
+    };
+    for (const vals of SWEEP_FIXTURES[T]) {
+        const a = TYPES[T].from(vals), n = a.length;
+        for (let i = 0; i < n; i++) {
+            if (!Object.is(a[i], vals[i])) throw new Error('runHintSweep ' + T + ': ' + vals[i] + ' not stored exactly');
+            if (i > 0 && !(a[i - 1] <= a[i])) throw new Error('runHintSweep ' + T + ': fixture not sorted at ' + i);
+        }
+        const qs = SWEEP_QUERIES.slice();
+        for (let i = 0; i < n; i++) {
+            const v = a[i] + 0;
+            for (const d of [v, v + 0.5, v - 0.5, v + 1, v - 1]) pushNew(qs, d);
+            if (Number.isFinite(v)) { pushNew(qs, ulpMove(v, 1)); pushNew(qs, ulpMove(v, -1)); }
+        }
+        for (let lo = 0; lo <= n; lo++) for (let hi = lo; hi <= n; hi++) {
+            const hs = [lo - 100, lo - 2, lo - 1];
+            for (let h = lo; h <= hi; h++) hs.push(h);
+            hs.push(hi + 1, hi + 2, hi + 100);
+            for (const h of SWEEP_HINTS) pushNew(hs, h);
+            if (hi === lo) seen.emptyRange = true;
+            for (let i = lo + 1; i < hi; i++) if (a[i] === a[i - 1]) seen.dupRange = true;
+            for (let i = lo; i < hi; i++) {
+                if (a[i] === Infinity) seen.posInf = true;
+                if (a[i] === -Infinity) seen.negInf = true;
+            }
+            for (const x of qs) {
+                if (Object.is(x, -0)) seen.negZeroQuery = true;
+                const wu = naiveUpper(a, lo, hi, x), ws = naiveSegment(a, lo, hi, x);
+                if (ws !== wu - 1 || Object.is(wu, -0) || Object.is(ws, -0)) {
+                    throw new Error('runHintSweep oracle ' + T + ' [' + lo + ',' + hi + ') x=' + fmtNum(x)
+                        + ': naiveUpper ' + fmtNum(wu) + ', naiveSegment ' + fmtNum(ws));
+                }
+                for (const h of hs) {
+                    for (let k = 0; k < ups.length; k++) {
+                        const g = ups[k][1](a, lo, hi, x, h); checks++; perName[ups[k][0]]++;
+                        if (g !== wu || Object.is(g, -0)) bad(ups[k][0], g, wu, n, lo, hi, x, h);
+                    }
+                    for (let k = 0; k < segs.length; k++) {
+                        const g = segs[k][1](a, lo, hi, x, h); checks++; perName[segs[k][0]]++;
+                        if (g !== ws || Object.is(g, -0)) bad(segs[k][0], g, ws, n, lo, hi, x, h);
+                    }
+                }
+            }
+        }
+    }
+    const lack = [];
+    if (!seen.negZeroQuery) lack.push('a -0 query');
+    if (!seen.dupRange) lack.push('a duplicate range');
+    if (!seen.emptyRange) lack.push('an empty range');
+    if (isFloat && !seen.posInf) lack.push('a stored +Infinity');
+    if (isFloat && !seen.negInf) lack.push('a stored -Infinity');
+    if (lack.length > 0) throw new Error('runHintSweep ' + T + ': never saw ' + lack.join(', ') + ' (coverage floor)');
+    return { checks, fails, msgs, perName, seen };
+}
+
 // ---- golden replay (test/fixtures/golden-f64.json "stream", implemented from its text) ---
 // Returns { <kernel>: [{ seed, count, sha256 }, ...] } for each kernel name in `kernels`,
 // calling mod[<kernel> + 'F64']. All streams of a seed come from ONE pass, so they share
@@ -393,7 +545,15 @@ export function goldenReplay(mod, kernels, seeds) {
         const rnd = makeRng(seed);
         const streams = kernels.map(() => []);
         const fns = kernels.map((k) => mod[k + 'F64']);
-        const isHint = kernels.map((k) => k === 'lowerBoundHint');
+        const isHint = kernels.map((k) => {
+            const kind = KERNELS[k];
+            // The fixture holds streams for the 5 1.0 kernels only: a seghint kind (or a name outside
+            // the roster) has no golden stream and THROWS rather than replay as some other row.
+            if (kind === undefined || kind === 'uhint' || kind === 'shint') {
+                throw new Error('goldenReplay: no golden stream for kernel ' + k + ' (kind ' + kind + ')');
+            }
+            return kind === 'hint';
+        });
         for (let round = 0; round <= 69; round++) {
             const n = round;
             const a = new Float64Array(n);

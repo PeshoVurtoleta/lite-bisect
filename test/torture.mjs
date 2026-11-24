@@ -23,12 +23,14 @@
 // parallel; 16 / 16 passed with the flag, B3 2026-11-11). Synchronous tier-up makes the count deterministic.
 //
 // Phase 1, retention (@zakkster/lite-leak): 4096 cycles, each inside a lite-signal root. A
-// cycle builds a sorted typed array (the oracle's TYPE_NAMES in turn), runs all 7 kernels of
+// cycle builds a sorted typed array (the oracle's TYPE_NAMES in turn), runs all 9 kernels of
 // that type against the naive oracle (test/oracle.mjs; law 9), tracks the array, and disposes
 // the root. After a forced GC + settle: tracker.size() <= 16, 0 audit findings, 0 leak reports,
 // <= 16 of the 4096 arrays still reachable (WeakRef) -- the kernels retain none of the arrays --
 // and exactly CYCLES x 5 queries x (oracle KERNELS families) checks ran (a roster family with
-// no phase-1 check fails the count).
+// no phase-1 check fails the count): 4096 x 5 x 9 = 184,320. Hints are integers (LEDGER B3):
+// upperBoundHint's h in [lo - 1, hi + 1] vs naiveUpper; segmentHint's s (a previous segment result,
+// lo - 1 .. hi - 1 in use) in [lo - 2, hi] vs naiveSegment (= naiveUpper - 1).
 // Control: LITE_BISECT_TORTURE_LEAK=1 keeps every root (and array) alive: size() reads
 // >= 4000 and the run exits 1.
 // Control (test-only, NF-R1): LITE_BISECT_TORTURE_STALL_MS=<ms> stalls the main thread for <ms> (a busy-wait on
@@ -39,7 +41,10 @@
 //
 // Phase 2, retention per op (@zakkster/lite-gc-profiler): one 200,000-op lane per kernel family
 // x type, each a LITERAL per-type call site (LEDGER C3: one shared call site fed several array
-// types goes megamorphic; the roster is NOT derived into one generic call site). A census
+// types goes megamorphic; the roster is NOT derived into one generic call site). The upperBoundHint /
+// segmentHint lanes (seghint 1.1) feed integer Smi x / h / s from Int32Array slots (x = floor of the
+// lane's q, clamped to int32; s = h - 1), so no fractional, NaN or non-Smi value crosses a call: zero-box
+// by construction (a NaN or non-Smi s boxes inside segmentHint, X-5; the alloc lanes own that case). A census
 // checks the lanes against the oracle's roster, Object.keys(KERNELS) x TYPE_NAMES, both ways:
 // a family x type with no lane (or two) fails. Per lane, in its own profiler window: a settled
 // heap + arrayBuffers sample (two forced GCs) before and after, the steady loop in phase
@@ -121,6 +126,8 @@ const {
     lowerBoundHintU16, segmentU16, nearestU16,
     lowerBoundBranchlessI32, upperBoundBranchlessI32, lowerBoundBranchyI32, upperBoundBranchyI32,
     lowerBoundHintI32, segmentI32, nearestI32,
+    upperBoundHintF64, segmentHintF64, upperBoundHintF32, segmentHintF32, upperBoundHintU32, segmentHintU32,
+    upperBoundHintU16, segmentHintU16, upperBoundHintI32, segmentHintI32,
 } = B;
 
 if (typeof globalThis.gc !== 'function') {
@@ -201,6 +208,10 @@ for (let c = 0; c < CYCLES; c++) {
                 ['lowerBoundHint', B['lowerBoundHint' + T](a, lo, hi, x, lo + ((rnd1() * (hi - lo + 1)) | 0)), wl],
                 ['segment', B['segment' + T](a, lo, hi, x), naiveSegment(a, lo, hi, x)],
                 ['nearest', B['nearest' + T](a, lo, hi, x), naiveNearest(a, lo, hi, x)],
+                ['upperBoundHint', B['upperBoundHint' + T](a, lo, hi, x, lo - 1 + ((rnd1() * (hi - lo + 3)) | 0)),
+                    naiveUpper(a, lo, hi, x)],
+                ['segmentHint', B['segmentHint' + T](a, lo, hi, x, lo - 2 + ((rnd1() * (hi - lo + 3)) | 0)),
+                    naiveSegment(a, lo, hi, x)],
             ];
             for (const [k, g, w] of got) {
                 p1checks++;
@@ -231,7 +242,7 @@ for (const w of refs) if (w.deref() !== undefined) alive++;
 // ---- phase 2: allocation lanes ---------------------------------------------------------------
 const N = 4096, QN = 1024, QM = QN - 1;
 const rnd2 = makeRng(9001);
-const A = {}, Q = {}, H = {};
+const A = {}, Q = {}, H = {}, XI = {}, S = {};
 for (const T of TYPES) {
     const a = sortedArray(T, N, rnd2);
     const q = new Float64Array(QN), h = new Int32Array(QN);
@@ -243,10 +254,20 @@ for (const T of TYPES) {
         h[i] = m < 6 ? j + ((rnd2() * 9) | 0) - 4 : m === 6 ? -3 : N + 3;
     }
     A[T] = a; Q[T] = q; H[T] = h;
+    // seghint lanes: integer Smi x and s, derived from q / h with no new rnd2 draw (the 35 lanes' data unchanged).
+    const xi = new Int32Array(QN), s = new Int32Array(QN);
+    for (let i = 0; i < QN; i++) {
+        const v = Math.floor(q[i] === q[i] ? q[i] : a[i]);
+        xi[i] = v < -2147483648 ? -2147483648 : v > 2147483647 ? 2147483647 : v;
+        s[i] = h[i] - 1;
+    }
+    XI[T] = xi; S[T] = s;
 }
 const aF64 = A.F64, aF32 = A.F32, aU32 = A.U32, aU16 = A.U16, aI32 = A.I32;
 const qF64 = Q.F64, qF32 = Q.F32, qU32 = Q.U32, qU16 = Q.U16, qI32 = Q.I32;
 const hF64 = H.F64, hF32 = H.F32, hU32 = H.U32, hU16 = H.U16, hI32 = H.I32;
+const xF64 = XI.F64, xF32 = XI.F32, xU32 = XI.U32, xU16 = XI.U16, xI32 = XI.I32;
+const sF64 = S.F64, sF32 = S.F32, sU32 = S.U32, sU16 = S.U16, sI32 = S.I32;
 const acc = new Int32Array(1);   // result sink: keeps every call live, holds no number in a closure
 
 const LANES = [
@@ -285,6 +306,16 @@ const LANES = [
     ['lowerBoundHintI32', (i) => { acc[0] ^= lowerBoundHintI32(aI32, 0, N, qI32[i & QM], hI32[i & QM]); }],
     ['segmentI32', (i) => { acc[0] ^= segmentI32(aI32, 0, N, qI32[i & QM]); }],
     ['nearestI32', (i) => { acc[0] ^= nearestI32(aI32, 0, N, qI32[i & QM]); }],
+    ['upperBoundHintF64', (i) => { acc[0] ^= upperBoundHintF64(aF64, 0, N, xF64[i & QM], hF64[i & QM]); }],
+    ['segmentHintF64', (i) => { acc[0] ^= segmentHintF64(aF64, 0, N, xF64[i & QM], sF64[i & QM]); }],
+    ['upperBoundHintF32', (i) => { acc[0] ^= upperBoundHintF32(aF32, 0, N, xF32[i & QM], hF32[i & QM]); }],
+    ['segmentHintF32', (i) => { acc[0] ^= segmentHintF32(aF32, 0, N, xF32[i & QM], sF32[i & QM]); }],
+    ['upperBoundHintU32', (i) => { acc[0] ^= upperBoundHintU32(aU32, 0, N, xU32[i & QM], hU32[i & QM]); }],
+    ['segmentHintU32', (i) => { acc[0] ^= segmentHintU32(aU32, 0, N, xU32[i & QM], sU32[i & QM]); }],
+    ['upperBoundHintU16', (i) => { acc[0] ^= upperBoundHintU16(aU16, 0, N, xU16[i & QM], hU16[i & QM]); }],
+    ['segmentHintU16', (i) => { acc[0] ^= segmentHintU16(aU16, 0, N, xU16[i & QM], sU16[i & QM]); }],
+    ['upperBoundHintI32', (i) => { acc[0] ^= upperBoundHintI32(aI32, 0, N, xI32[i & QM], hI32[i & QM]); }],
+    ['segmentHintI32', (i) => { acc[0] ^= segmentHintI32(aI32, 0, N, xI32[i & QM], sI32[i & QM]); }],
 ];
 // Census, both ways: one lane per oracle family x type (each a function of this build), and no
 // lane outside that roster.

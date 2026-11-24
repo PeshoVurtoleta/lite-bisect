@@ -15,9 +15,17 @@
  *   nearest   the index closest to x: a tie between the last value below x and the first above goes
  *             to the LOWER one; an exact match wins (the first i with a[i] === x); within a run of
  *             equal values, the index next to x; an empty range -> lo, NaN -> lo.
+ *   upperHint upperBoundHint*(a, lo, hi, x, h): upper, galloping out from h. h is an integer index or
+ *             NaN (NaN -> lo; outside [lo, hi] clamped); a non-integer h is a caller error that may
+ *             return a wrong index or never return.
+ *   segmentHint segmentHint*(a, lo, hi, x, s): segment, where s is the previous segment result
+ *             (lo - 1 .. hi - 1) and the upper gallop starts from s + 1. s is an integer or NaN (NaN ->
+ *             as s = lo - 1; outside [lo - 1, hi - 1] clamped); a non-integer s is a caller error that
+ *             may return a wrong index or never return. The hi - lo <= 2^30 - 1 cap applies to both.
  *   A NaN query compares false everywhere: every lower / upper / hint kernel returns lo.
  *
  * Allocation: zero allocation where the kernel inlines into its caller, or every number argument (the query; the hint of lowerBoundHint*; lo / hi) is a Smi; a non-Smi number computed at run time or read from a typed array (a fractional query, a NaN hint read from a Float64Array, -0 for lo / hi) and passed across a call V8 does not inline is boxed by the caller: one 16 B HeapNumber per such argument on Node. For no hint pass lo or the literal NaN: neither boxes.
+ * Hinted upper kernels: the h of upperBoundHint* is a hint as for lowerBoundHint* (no hint = lo or the literal NaN). The no-hint value of segmentHint* is lo - 1 (an integer, no box); a NaN s (the literal NaN too) or a non-Smi s makes one 16 B HeapNumber inside segmentHint* (s + 1 is a new double) when upperBoundHint* is not inlined into it.
  *
  * The hot kernels trust the caller: no range check, no throw. A range outside the
  * contract may return a wrong index or never return. The cold checks assertRange(a, lo, hi) and
@@ -106,6 +114,27 @@ export function nearestF64(a, lo, hi, x) {
     return i - ((!((x - (d - s)) - (p + s) > (q - (u - t)) - (x + t)) && p * 0.5 + q * 0.5 !== -Infinity) | 0);
 }
 
+export function upperBoundHintF64(a, lo, hi, x, h) {
+    if (!(h >= lo)) h = lo;
+    if (h > hi) h = hi;
+    let step = 1, b = lo, e = h;
+    if (h < hi && a[h] <= x) {
+        let r = h + 1;
+        b = r;
+        while (r < hi && a[r] <= x) { b = r + 1; step <<= 1; r = h + step; }
+        e = r > hi ? hi : r;
+    } else {
+        let l = h - 1;
+        while (l >= lo && !(a[l] <= x)) { e = l; step <<= 1; l = h - step; }
+        b = l < lo ? lo : l + 1;
+    }
+    return upperBoundBranchlessF64(a, b, e, x);
+}
+
+export function segmentHintF64(a, lo, hi, x, s) {
+    return upperBoundHintF64(a, lo, hi, x, s + 1) - 1;
+}
+
 export function lowerBoundBranchlessF32(a, lo, hi, x) {
     let n = hi - lo;
     if (n === 0) return lo;              // a[b] below would read outside the range
@@ -183,6 +212,27 @@ export function nearestF32(a, lo, hi, x) {
     // with a finite upper one is the farther of the two.
     const s = d - x, t = u - q;
     return i - ((!((x - (d - s)) - (p + s) > (q - (u - t)) - (x + t)) && p * 0.5 + q * 0.5 !== -Infinity) | 0);
+}
+
+export function upperBoundHintF32(a, lo, hi, x, h) {
+    if (!(h >= lo)) h = lo;
+    if (h > hi) h = hi;
+    let step = 1, b = lo, e = h;
+    if (h < hi && a[h] <= x) {
+        let r = h + 1;
+        b = r;
+        while (r < hi && a[r] <= x) { b = r + 1; step <<= 1; r = h + step; }
+        e = r > hi ? hi : r;
+    } else {
+        let l = h - 1;
+        while (l >= lo && !(a[l] <= x)) { e = l; step <<= 1; l = h - step; }
+        b = l < lo ? lo : l + 1;
+    }
+    return upperBoundBranchlessF32(a, b, e, x);
+}
+
+export function segmentHintF32(a, lo, hi, x, s) {
+    return upperBoundHintF32(a, lo, hi, x, s + 1) - 1;
 }
 
 export function lowerBoundBranchlessU32(a, lo, hi, x) {
@@ -264,6 +314,27 @@ export function nearestU32(a, lo, hi, x) {
     return i - ((!((x - (d - s)) - (p + s) > (q - (u - t)) - (x + t)) && p * 0.5 + q * 0.5 !== -Infinity) | 0);
 }
 
+export function upperBoundHintU32(a, lo, hi, x, h) {
+    if (!(h >= lo)) h = lo;
+    if (h > hi) h = hi;
+    let step = 1, b = lo, e = h;
+    if (h < hi && a[h] <= x) {
+        let r = h + 1;
+        b = r;
+        while (r < hi && a[r] <= x) { b = r + 1; step <<= 1; r = h + step; }
+        e = r > hi ? hi : r;
+    } else {
+        let l = h - 1;
+        while (l >= lo && !(a[l] <= x)) { e = l; step <<= 1; l = h - step; }
+        b = l < lo ? lo : l + 1;
+    }
+    return upperBoundBranchlessU32(a, b, e, x);
+}
+
+export function segmentHintU32(a, lo, hi, x, s) {
+    return upperBoundHintU32(a, lo, hi, x, s + 1) - 1;
+}
+
 export function lowerBoundBranchlessU16(a, lo, hi, x) {
     let n = hi - lo;
     if (n === 0) return lo;              // a[b] below would read outside the range
@@ -343,6 +414,27 @@ export function nearestU16(a, lo, hi, x) {
     return i - ((!((x - (d - s)) - (p + s) > (q - (u - t)) - (x + t)) && p * 0.5 + q * 0.5 !== -Infinity) | 0);
 }
 
+export function upperBoundHintU16(a, lo, hi, x, h) {
+    if (!(h >= lo)) h = lo;
+    if (h > hi) h = hi;
+    let step = 1, b = lo, e = h;
+    if (h < hi && a[h] <= x) {
+        let r = h + 1;
+        b = r;
+        while (r < hi && a[r] <= x) { b = r + 1; step <<= 1; r = h + step; }
+        e = r > hi ? hi : r;
+    } else {
+        let l = h - 1;
+        while (l >= lo && !(a[l] <= x)) { e = l; step <<= 1; l = h - step; }
+        b = l < lo ? lo : l + 1;
+    }
+    return upperBoundBranchlessU16(a, b, e, x);
+}
+
+export function segmentHintU16(a, lo, hi, x, s) {
+    return upperBoundHintU16(a, lo, hi, x, s + 1) - 1;
+}
+
 export function lowerBoundBranchlessI32(a, lo, hi, x) {
     let n = hi - lo;
     if (n === 0) return lo;              // a[b] below would read outside the range
@@ -420,6 +512,27 @@ export function nearestI32(a, lo, hi, x) {
     // with a finite upper one is the farther of the two.
     const s = d - x, t = u - q;
     return i - ((!((x - (d - s)) - (p + s) > (q - (u - t)) - (x + t)) && p * 0.5 + q * 0.5 !== -Infinity) | 0);
+}
+
+export function upperBoundHintI32(a, lo, hi, x, h) {
+    if (!(h >= lo)) h = lo;
+    if (h > hi) h = hi;
+    let step = 1, b = lo, e = h;
+    if (h < hi && a[h] <= x) {
+        let r = h + 1;
+        b = r;
+        while (r < hi && a[r] <= x) { b = r + 1; step <<= 1; r = h + step; }
+        e = r > hi ? hi : r;
+    } else {
+        let l = h - 1;
+        while (l >= lo && !(a[l] <= x)) { e = l; step <<= 1; l = h - step; }
+        b = l < lo ? lo : l + 1;
+    }
+    return upperBoundBranchlessI32(a, b, e, x);
+}
+
+export function segmentHintI32(a, lo, hi, x, s) {
+    return upperBoundHintI32(a, lo, hi, x, s + 1) - 1;
 }
 // END GENERATED by scripts/gen.mjs
 

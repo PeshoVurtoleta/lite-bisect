@@ -8,12 +8,15 @@
 // nearest is an `==` row since AU-R1a (189 B, TurboFan-only inlining). The table itself is checked
 // against SPEC-p1 section 1 typed below. A row passes only if the tool exits 0 with VERDICT WITHIN,
 // its fn has exactly 1 match, and the length meets the row; a kernel passes only if its 5 per-type
-// copies read the same length (SPEC-p1 section 1).
+// copies read the same length (SPEC-p1 section 1). 1.1 seghint (SPEC seghint-1.1 B1, addendum X-8): +2 kernels,
+// upperBoundHint<T> == 212 and segmentHint<T> == 31 (45 rows, 9 copies checks); the bytecode gate never reads inner
+// (an object or, for segmentHint, an array: test/Bisect.inline.test.mjs judges it) nor channels2 / channels3.
 // Controls (scratch mutants of Bisect.js in a mktemp dir; the driver imports LITE_BISECT_MODULE):
 //   +1 B lowerBoundBranchlessF64 (104 B) FAILS (tool OVER, row, copies); segmentF64 padded to exactly
 //   100 B FAILS its < 100 row (closes the U5 nit: segment's budget is checked here); segmentF64 at 99 B
 //   passes its row and fails copies-equal; segmentF32 + 1 B (26 B) fails copies-equal only; a wrong
-//   --node-version is NO VERDICT; parser controls on edited report text.
+//   --node-version is NO VERDICT; parser controls on edited report text; upperBoundHintU32 + 1 B (213 B) and
+//   segmentHintI32 + 1 B (32 B) each fail exactly their own row plus their copies check on the full 45-row run.
 
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
@@ -33,6 +36,10 @@ const SPEC = {
     lowerBoundBranchless: ['==', 103], upperBoundBranchless: ['==', 103],
     lowerBoundBranchy: ['==', 55], upperBoundBranchy: ['==', 55],
     lowerBoundHint: ['==', 228], segment: ['<', 100], nearest: ['==', 189],
+    // X-8: R1 measured V-1TAIL at 214 B with an IMPORTED inner (+2 B TDZ check per import site); 1 site -> 212.
+    upperBoundHint: ['==', 212],
+    // R1: the wrapper measured 31 B; X-8 leaves it unchanged.
+    segmentHint: ['==', 31],
 };
 const TYPES = ['F64', 'F32', 'U32', 'U16', 'I32'];
 
@@ -133,8 +140,9 @@ test('census: both gate files exist and npm run gates names them (a missing name
     assert.deepEqual(missingGateFiles(), []);
 });
 
-test('table: expect.json rows == 7 kernels x 5 types and match SPEC-p1 section 1', () => {
-    assert.equal(EXPECT.rows.length, 35);
+test('table: expect.json rows == 9 kernels x 5 types and match SPEC-p1 section 1 + seghint-1.1 X-8', () => {
+    assert.equal(EXPECT.rows.length, 45);
+    assert.deepEqual([...new Set(EXPECT.rows.map((r) => r.kernel))].sort(), Object.keys(SPEC).sort(), 'kernel set');
     for (const [k, [op, bytes]] of Object.entries(SPEC)) {
         const rs = rowsOf(k);
         assert.deepEqual(rs.map((r) => r.type).sort(), [...TYPES].sort(), k + ' types');
@@ -145,10 +153,13 @@ test('table: expect.json rows == 7 kernels x 5 types and match SPEC-p1 section 1
         }
     }
     assert.ok(SPEC.lowerBoundBranchy[1] < 100 && SPEC.upperBoundBranchy[1] < 100, 'branchy < 100 (SPEC-p1)');
+    // C13 pin data (B-S4), typed: channels2 = every upperBoundHint / segmentHint export, channels3 = segmentHint only.
+    assert.deepEqual(EXPECT.channels2, TYPES.flatMap((t) => ['upperBoundHint' + t, 'segmentHint' + t]), 'channels2');
+    assert.deepEqual(EXPECT.channels3, TYPES.map((t) => 'segmentHint' + t), 'channels3');
 });
 
 let BASE = null;
-test('assertion 9 bytecode: branchless == 103, branchy == 55 (< 100), hint == 228, segment < 100, nearest == 189 (AU-R1a), 5 copies equal', () => {
+test('assertion 9 bytecode: branchless == 103, branchy == 55 (< 100), hint == 228, segment < 100, nearest == 189 (AU-R1a), upperBoundHint == 212 (X-8), segmentHint == 31, 5 copies equal', () => {
     need();
     const r = runBudget(EXPECT.rows);
     BASE = { ...check(EXPECT.rows, r.status, r.stdout + r.stderr), text: r.stdout };
@@ -156,8 +167,8 @@ test('assertion 9 bytecode: branchless == 103, branchy == 55 (< 100), hint == 22
     assert.equal(BASE.noVerdict, null, BASE.noVerdict);
     assert.deepEqual(failRows(BASE), []);
     assert.deepEqual(failCopies(BASE), []);
-    assert.equal(BASE.rows.length, 35);
-    assert.equal(BASE.copies.length, 7);
+    assert.equal(BASE.rows.length, 45);
+    assert.equal(BASE.copies.length, 9);
     assert.ok(BASE.pass);
 });
 
@@ -211,6 +222,36 @@ test('control: segmentF32 + 1 B (26 B, within budget) fails copies-equal only', 
     assert.equal(res.status, 0);
     assert.deepEqual(failRows(res), []);
     assert.deepEqual(failCopies(res), ['segment']);
+    assert.equal(res.pass, false);
+});
+
+test('control: upperBoundHintU32 + 1 B (213 B) FAILS exactly its row and its copies check on the full table', () => {
+    need();
+    const p = mutant('ubh213', 'upperBoundHintU32', 'return upperBoundBranchlessU32(a, b, e, x);',
+        'const r = upperBoundBranchlessU32(a, b, e, x);\n    return r;');
+    const r = runBudget(EXPECT.rows, { module: p });
+    const res = check(EXPECT.rows, r.status, r.stdout + r.stderr);
+    log('C-ubh213', res, r.cmd);
+    assert.equal(res.rows.find((x) => x.name === 'upperBoundHintU32').length, 213, 'the mutant must give exactly 213 B');
+    assert.equal(res.status, 1, 'tool must say OVER (exit 1)');
+    assert.equal(res.verdict, 'OVER');
+    assert.deepEqual(failRows(res), ['upperBoundHintU32']);
+    assert.deepEqual(failCopies(res), ['upperBoundHint']);
+    assert.equal(res.pass, false);
+});
+
+test('control: segmentHintI32 + 1 B (32 B) FAILS exactly its row and its copies check on the full table', () => {
+    need();
+    const p = mutant('sh32', 'segmentHintI32', 'return upperBoundHintI32(a, lo, hi, x, s + 1) - 1;',
+        'const r = upperBoundHintI32(a, lo, hi, x, s + 1) - 1;\n    return r;');
+    const r = runBudget(EXPECT.rows, { module: p });
+    const res = check(EXPECT.rows, r.status, r.stdout + r.stderr);
+    log('C-sh32', res, r.cmd);
+    assert.equal(res.rows.find((x) => x.name === 'segmentHintI32').length, 32, 'the mutant must give exactly 32 B');
+    assert.equal(res.status, 1, 'tool must say OVER (exit 1)');
+    assert.equal(res.verdict, 'OVER');
+    assert.deepEqual(failRows(res), ['segmentHintI32']);
+    assert.deepEqual(failCopies(res), ['segmentHint']);
     assert.equal(res.pass, false);
 });
 

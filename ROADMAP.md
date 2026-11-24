@@ -266,7 +266,7 @@ lite-utils devDependency line is deferred. Section 6's "2^30 cap" means hi - lo 
 
 ## 5c. P1 final-audit rulings (maintainer, 2026-11-11, Session B step B2)
 
-Asked 2026-11-11 in P1 final audit Session B (B2), one AskUserQuestion sitting after the cross-check (audit/2026-11-11-bisect/cross-{opus,fable}/CROSS.md); all answered. Quoted:
+Asked 2026-11-11 in P1 final audit Session B (B2), one AskUserQuestion sitting after the cross-check (.handoff/archive/1.0.0/audit/2026-11-11-bisect/cross-{opus,fable}/CROSS.md); all answered. Quoted:
 
 | Id | Question | Ruling | Means |
 |---|---|---|---|
@@ -410,7 +410,7 @@ took its recommended option. Ruling text = the PROPOSAL's option text; labels qu
 | Id | Question | Ruling | Means |
 |---|---|---|---|
 | SH-R1 | Q-SH-SURFACE | "Both, 10 exports (Recommended)" | `upperBoundHint<T>` and `segmentHint<T>` for the 5 types; segment is a 31 B wrapper, like `segment<T>` over `upperBoundBranchless<T>`; contingent on the R2 kill rule (passed, SH-R4) |
-| SH-R2 | Q-SH-BODY | "V-1TAIL, 214 B (Recommended)" | one tail site, 214 B (today's lowerBoundHint is 228 B); 2 of 3 channels inlined on the R1 harness where the mirror and today's lowerBoundHint got 1 (traced, mechanism unverified) |
+| SH-R2 | Q-SH-BODY | "V-1TAIL, 214 B (Recommended)" | one tail site, 214 B (214 B measured with an imported inner; 212 B as shipped, X-8) (today's lowerBoundHint is 228 B); 2 of 3 channels inlined on the R1 harness where the mirror and today's lowerBoundHint got 1 (traced, mechanism unverified) |
 | SH-R3 | Q-SH-HINT | "Previous segment (Recommended)" | s = the previous SEGMENT result (lo - 1 .. hi - 1); the kernel passes s + 1 to the upper body; NaN s -> as s = lo - 1; s outside [lo - 1, hi - 1] clamped |
 | SH-R4 | Q-SH-GATE | "R2+R3 strict hold (Recommended)" | one `quiet-lock run --strict` hold of r2-ab.mjs; amended kill rule (B1 FASTER than W on >= 1 coherent cell, same cell again in the re-run). PASSED 2026-11-23: 19 / 25 cells (REPORTED) |
 | SH-R5 | Q-SH-LBH | "Leave it (Recommended)" | no one-tail rewrite of lowerBoundHint in this program; judged with 8a item 10 under AB-G2 |
@@ -656,7 +656,7 @@ release, once the A/B result (P3-R1) is known. Each item names its trigger and w
    overlays into `.handoff/archive/1.0.0/` (ORCHESTRATOR "STATE"); rotate HISTORY.md past ~50K chars.
    **DONE 2026-11-24:** moved, relative paths kept: 41 review-overlay dirs, rejected/D-docs, PLAN-final-audit /
    PROPOSAL-ab / PROPOSAL-bisect / P1-BRIEF-common, 25 old COMMIT_MSG files and `audit/` except
-   audit/2026-11-11-bisect/ (README cites its cross-fable/cross-repro.mjs; move it when a README change re-cites it).
+   audit/2026-11-11-bisect/ (README cites its cross-fable/cross-repro.mjs; move it when a README change re-cites it). **Moved 2026-11-24** with the 1.1 README re-cite (README Known limits).
    `.handoff/frozen/` stays: test/fixtures/golden-f64.json names .handoff/frozen/87389fb-3af35dca (AB-G2 reads the
    tracked copy bench/research/frozen/88e5b1c-10add825, bench/ab-gate.mjs:79). HISTORY.md is 38,000 chars: not rotated.
    Citations of moved paths were updated (LEDGER, ROADMAP, RESEARCH).

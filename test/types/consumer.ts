@@ -8,15 +8,15 @@
 import * as B from "@zakkster/lite-bisect";
 import {
     lowerBoundBranchlessF64, upperBoundBranchlessF64, lowerBoundBranchyF64, upperBoundBranchyF64,
-    lowerBoundHintF64, segmentF64, nearestF64,
+    lowerBoundHintF64, segmentF64, nearestF64, upperBoundHintF64, segmentHintF64,
     lowerBoundBranchlessF32, upperBoundBranchlessF32, lowerBoundBranchyF32, upperBoundBranchyF32,
-    lowerBoundHintF32, segmentF32, nearestF32,
+    lowerBoundHintF32, segmentF32, nearestF32, upperBoundHintF32, segmentHintF32,
     lowerBoundBranchlessU32, upperBoundBranchlessU32, lowerBoundBranchyU32, upperBoundBranchyU32,
-    lowerBoundHintU32, segmentU32, nearestU32,
+    lowerBoundHintU32, segmentU32, nearestU32, upperBoundHintU32, segmentHintU32,
     lowerBoundBranchlessU16, upperBoundBranchlessU16, lowerBoundBranchyU16, upperBoundBranchyU16,
-    lowerBoundHintU16, segmentU16, nearestU16,
+    lowerBoundHintU16, segmentU16, nearestU16, upperBoundHintU16, segmentHintU16,
     lowerBoundBranchlessI32, upperBoundBranchlessI32, lowerBoundBranchyI32, upperBoundBranchyI32,
-    lowerBoundHintI32, segmentI32, nearestI32,
+    lowerBoundHintI32, segmentI32, nearestI32, upperBoundHintI32, segmentHintI32,
     assertRange, assertSorted,
 } from "@zakkster/lite-bisect";
 import type { BisectArray } from "@zakkster/lite-bisect";
@@ -42,6 +42,10 @@ lowerBoundHintI32(u16, 0, 4, 2, 0);
 segmentF64(i32, 0, 4, 2);
 // @ts-expect-error a Float64Array is not a Uint16Array
 nearestU16(f64, 0, 4, 2);
+// @ts-expect-error a Float32Array is not a Uint32Array
+upperBoundHintU32(f32, 0, 4, 2, 1);
+// @ts-expect-error an Int32Array is not a Float32Array
+segmentHintF32(i32, 0, 4, 2, 0);
 // @ts-expect-error a number[] is not a BisectArray
 assertRange([1, 2, 3], 0, 3);
 
@@ -66,6 +70,8 @@ r += upperBoundBranchyF64(f64, 0, 4, 2);
 r += lowerBoundHintF64(f64, 0, 4, 2, 1);
 r += segmentF64(f64, 0, 4, 2);
 r += nearestF64(f64, 0, 4, 2);
+r += upperBoundHintF64(f64, 0, 4, 2, 1);
+r += segmentHintF64(f64, 0, 4, 2, 0);
 
 r += lowerBoundBranchlessF32(f32, 0, 4, 2);
 r += upperBoundBranchlessF32(f32, 0, 4, 2);
@@ -74,6 +80,8 @@ r += upperBoundBranchyF32(f32, 0, 4, 2);
 r += lowerBoundHintF32(f32, 0, 4, 2, NaN);
 r += segmentF32(f32, 0, 4, 2);
 r += nearestF32(f32, 0, 4, 2);
+r += upperBoundHintF32(f32, 0, 4, 2, 1);
+r += segmentHintF32(f32, 0, 4, 2, 0);
 
 r += lowerBoundBranchlessU32(u32, 0, 4, 2);
 r += upperBoundBranchlessU32(u32, 0, 4, 2);
@@ -82,6 +90,8 @@ r += upperBoundBranchyU32(u32, 0, 4, 2);
 r += lowerBoundHintU32(u32, 0, 4, 2, 3);
 r += segmentU32(u32, 0, 4, 2);
 r += nearestU32(u32, 0, 4, 2);
+r += upperBoundHintU32(u32, 0, 4, 2, 1);
+r += segmentHintU32(u32, 0, 4, 2, 0);
 
 r += lowerBoundBranchlessU16(u16, 0, 4, 2);
 r += upperBoundBranchlessU16(u16, 0, 4, 2);
@@ -90,6 +100,8 @@ r += upperBoundBranchyU16(u16, 0, 4, 2);
 r += lowerBoundHintU16(u16, 0, 4, 2, 0);
 r += segmentU16(u16, 0, 4, 2);
 r += nearestU16(u16, 0, 4, 2);
+r += upperBoundHintU16(u16, 0, 4, 2, 1);
+r += segmentHintU16(u16, 0, 4, 2, 0);
 
 r += lowerBoundBranchlessI32(i32, 0, 4, 2);
 r += upperBoundBranchlessI32(i32, 0, 4, 2);
@@ -98,6 +110,8 @@ r += upperBoundBranchyI32(i32, 0, 4, 2);
 r += lowerBoundHintI32(i32, 0, 4, 2, 2);
 r += segmentI32(i32, 0, 4, 2);
 r += nearestI32(i32, 0, 4, 2);
+r += upperBoundHintI32(i32, 0, 4, 2, 1);
+r += segmentHintI32(i32, 0, 4, 2, 0);
 
 // the namespace form reaches the same declarations
 r += B.lowerBoundBranchlessF64(f64, 0, 4, 2);
