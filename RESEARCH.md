@@ -131,7 +131,8 @@ caught. The audit's segHintFast is not exact (NaN query and NaN hint: 83,015 fai
 gallops; B3's fractional-hint hang reproduces on every variant (caller error, as for lowerBoundHint).
 
 ### 4.2 R1 bytes and inlining (untimed, node v26.8.2)
-One-tail upperBoundHint 214 B (214 B measured with an imported inner; 212 B as shipped, X-8) (+31 B segment wrapper) vs mirror 232 B (2 tail sites) and today's lowerBoundHint 228 B.
+One-tail upperBoundHint 214 B (214 B measured with an imported inner; 212 B as shipped, X-8) (+31 B segment
+wrapper) vs mirror 232 B (2 tail sites) and today's lowerBoundHint 228 B.
 In a frame function with k channels (feedback form, fractional x; traced on the R1 harness, mechanism unverified --
 the byte sums do not predict it): one-tail got 2 channels inlined, the mirror and today's lowerBoundHint 1 (15.87
 B/op per extra channel); today's segment 3. Maglev inlines no hinted body (> 100 B). The one-tail + fast-check body's

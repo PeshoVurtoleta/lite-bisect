@@ -22,10 +22,11 @@
  *             (lo - 1 .. hi - 1) and the upper gallop starts from s + 1. s is an integer or NaN (NaN ->
  *             as s = lo - 1; outside [lo - 1, hi - 1] clamped); a non-integer s is a caller error that
  *             may return a wrong index or never return. The hi - lo <= 2^30 - 1 cap applies to both.
- *   A NaN query compares false everywhere: every lower / upper / hint kernel returns lo.
+ *   A NaN query compares false everywhere: every lower / upper / hint kernel returns lo,
+ *   segment / segmentHint return lo - 1, nearest returns lo.
  *
  * Allocation: zero allocation where the kernel inlines into its caller, or every number argument (the query; the hint of lowerBoundHint*; lo / hi) is a Smi; a non-Smi number computed at run time or read from a typed array (a fractional query, a NaN hint read from a Float64Array, -0 for lo / hi) and passed across a call V8 does not inline is boxed by the caller: one 16 B HeapNumber per such argument on Node. For no hint pass lo or the literal NaN: neither boxes.
- * Hinted upper kernels: the h of upperBoundHint* is a hint as for lowerBoundHint* (no hint = lo or the literal NaN). The no-hint value of segmentHint* is lo - 1 (an integer, no box); a NaN s (the literal NaN too) or a non-Smi s makes one 16 B HeapNumber inside segmentHint* (s + 1 is a new double) when upperBoundHint* is not inlined into it.
+ * Hinted upper kernels: the h of upperBoundHint* is a hint as for lowerBoundHint* (no hint = lo or the literal NaN). The no-hint value of segmentHint* is lo - 1 (an integer, no box); a NaN s (the literal NaN too) or a non-Smi s makes one 16 B HeapNumber on Node inside segmentHint* (s + 1 is a new double) when upperBoundHint* is not inlined into it.
  *
  * The hot kernels trust the caller: no range check, no throw. A range outside the
  * contract may return a wrong index or never return. The cold checks assertRange(a, lo, hi) and

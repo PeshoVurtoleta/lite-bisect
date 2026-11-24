@@ -266,7 +266,8 @@ lite-utils devDependency line is deferred. Section 6's "2^30 cap" means hi - lo 
 
 ## 5c. P1 final-audit rulings (maintainer, 2026-11-11, Session B step B2)
 
-Asked 2026-11-11 in P1 final audit Session B (B2), one AskUserQuestion sitting after the cross-check (.handoff/archive/1.0.0/audit/2026-11-11-bisect/cross-{opus,fable}/CROSS.md); all answered. Quoted:
+Asked 2026-11-11 in P1 final audit Session B (B2), one AskUserQuestion sitting after the cross-check
+(.handoff/archive/1.0.0/audit/2026-11-11-bisect/cross-{opus,fable}/CROSS.md); all answered. Quoted:
 
 | Id | Question | Ruling | Means |
 |---|---|---|---|
@@ -339,6 +340,16 @@ Gate-unit rulings (maintainer, 2026-11-12, AskUserQuestion during the P3 A/B gat
 | AB-G2 | "Bind live = frozen (Recommended)" | the gate times the frozen 88e5b1c-10add825 kernels and STOPs (ANCHOR, NO VERDICT) if a live Bisect.js F64 kernel body differs from its frozen body byte for byte |
 | AB-G3 | "Re-judge Nov 12 run (Recommended)": Download run 43145179770's logs and judge them offline with today's stricter gate (--verdict-file, deterministic), after a session confirms the timing code and kernel bytes are unchanged since 679dcad (AB-G2). PASS on both OS = P3-R1 met; anything else stops again. (maintainer, 2026-11-23, after the second NO VERDICT, 45087568692) | done 2026-11-23 (REJUDGE burst): the bench/ab-gate.mjs diff 679dcad..3621f69 has no timing-path hunk (judge, selftest and comment hunks only), ab.yml is unchanged and the gate's ANCHOR check reads the live bodies byte-identical to frozen 10add825; the 3621f69 gate (7e0f9262) re-judged both rung-ALL logs: ubuntu `VERDICT PASS gated=13/13` (log 6035afb2), macOS `VERDICT PASS gated=13/13` (log d6cc3927), the same lines the run printed. P3-R1 MET (section 8). Evidence: .handoff/rejudge/REJUDGE.md |
 | AB-G3a | (maintainer 2026-11-24, AskUserQuestion at `/release 1.1.0`) "Extend AB-G3 (Recommended)" | applies when 1.1.0 is cut (held, SH-R8b), PROVIDED the three gated F64 bodies and bench/ab-gate.mjs are still unchanged then (re-check AB-G2 parity at that release): run 43145179770 stands for 1.1.0: the three gated F64 kernel bodies are byte-identical (AB-G2 parity, seghint evidence/parity.mjs, re-run by qa AA1) and bench/ab-gate.mjs is unchanged since 3621f69, the re-judging gate; no dispatch. The new families make no speed claim. |
+
+Ab-gate boundary test and OUT items (maintainer, AskUserQuestion, 2026-11-24, FILLERS burst):
+- **Ruled:** the ab-gate verdict boundary rows B1-B10 (ported from LitePerfGate r0-verdict-parity.mjs 16693c6e, P5)
+  and 10 comparator-flip must-fail mutants live in test/abgate-boundary.test.mjs, inside `npm test` (it spawns
+  `bench/ab-gate.mjs --verdict-file -`, untimed), NOT as F46+ inside ab-gate.mjs. So ab-gate.mjs stays byte-identical
+  (AB-G3a); the test also pins ab-gate.mjs's sha256 7e0f9262. (ab-gate.mjs's own header says it is never part of
+  `npm test`; that refers to the timed gate run, which stays out of `npm test`.)
+- **OUT until the next ab-gate.mjs change (post-1.1.0), ruled "Record as OUT (Recommended)":** must-fail controls for
+  the in-clock fold check (runLane `verifyRun(..., 'timed')`) and the post-timing reference check (checkSample
+  'after timing'). Each needs a new LAB_INJECT entry in the frozen INJECTIONS table, which is a gate-logic change.
 
 ## 5g. Gates-unit rulings (maintainer, 2026-11-22, release-program step 2, P1-R1 / P3-R4)
 
@@ -659,7 +670,8 @@ release, once the A/B result (P3-R1) is known. Each item names its trigger and w
    overlays into `.handoff/archive/1.0.0/` (ORCHESTRATOR "STATE"); rotate HISTORY.md past ~50K chars.
    **DONE 2026-11-24:** moved, relative paths kept: 41 review-overlay dirs, rejected/D-docs, PLAN-final-audit /
    PROPOSAL-ab / PROPOSAL-bisect / P1-BRIEF-common, 25 old COMMIT_MSG files and `audit/` except
-   audit/2026-11-11-bisect/ (README cites its cross-fable/cross-repro.mjs; move it when a README change re-cites it). **Moved 2026-11-24** with the 1.1 README re-cite (README Known limits).
+   audit/2026-11-11-bisect/ (README cites its cross-fable/cross-repro.mjs; move it when a README change re-cites
+   it). **Moved 2026-11-24** with the 1.1 README re-cite (README Known limits).
    `.handoff/frozen/` stays: test/fixtures/golden-f64.json names .handoff/frozen/87389fb-3af35dca (AB-G2 reads the
    tracked copy bench/research/frozen/88e5b1c-10add825, bench/ab-gate.mjs:79). HISTORY.md is 38,000 chars: not rotated.
    Citations of moved paths were updated (LEDGER, ROADMAP, RESEARCH).

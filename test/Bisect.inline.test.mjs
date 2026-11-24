@@ -51,7 +51,12 @@ function innersOf(r) {
     if (seen.size !== list.length || seen.has(r.name)) throw new Error('expect.json: duplicate or self inner of ' + r.name);
     return list;
 }
-function edgesOf(rows, names = null, prefix = 'call_', mult = 1, innerOnly = false) {
+// names is REQUIRED: null = every row, an array = the channel list; undefined (a missing expect.json
+// channels list) or anything else throws, so a missing list can never become "every row".
+function edgesOf(rows, names, prefix = 'call_', mult = 1, innerOnly = false) {
+    if (names !== null && !Array.isArray(names)) {
+        throw new Error('edgesOf: names must be null or an array, got ' + typeof names);
+    }
     const byName = new Map(rows.map((r) => [r.name, r]));
     const pick = names === null ? rows : names.map((n) => {
         const r = byName.get(n);
@@ -70,8 +75,8 @@ function edgesOf(rows, names = null, prefix = 'call_', mult = 1, innerOnly = fal
     }
     return edges;
 }
-const edgesAll = (rows) => [...edgesOf(rows), ...edgesOf(rows, EXPECT.channels2, 'call2_', 2)];
-const EDGES = edgesOf(EXPECT.rows); // single-channel, assertion 8
+const edgesAll = (rows) => [...edgesOf(rows, null), ...edgesOf(rows, EXPECT.channels2, 'call2_', 2)];
+const EDGES = edgesOf(EXPECT.rows, null); // single-channel, assertion 8
 const EDGES2 = edgesOf(EXPECT.rows, EXPECT.channels2, 'call2_', 2); // two-channel, C13 pin
 const EDGES3 = edgesOf(EXPECT.rows, EXPECT.channels3, 'call3_', 3, true); // c3 control (expected to FAIL)
 const ALL = [...EDGES, ...EDGES2];
@@ -325,4 +330,70 @@ test('c3 control: every call3_segmentHint caller fails its upperBoundHint and up
     const want = EDGES3.map((e) => e.id).sort();
     assert.equal(want.length, 10);
     assert.deepEqual(failing(v), want, 'c3 control open or other edges moved:\n' + fmt(v));
+});
+
+// ---- NIT a: call2_ driver SOURCE shape (pure source read, every Node, no driver run) ------------------
+// Per name in channels2: the literal `function call2_<n>(a, b, k) {` exists once; channel a calls
+// `<n>(a, 0, a.length, QX` once and channel b `<n>(b, 0, b.length, QY` once; each channel reads AND writes
+// only its own slot (H_call2_<n>[0] for a, [1] for b). segmentHint's walk starts at -1: the setup loop
+// (`init = name.startsWith('call2_segmentHint') ? -1 : 0`, both slots set to init) is pinned once.
+function call2SrcProblems(src, names) {
+    const out = [];
+    const cnt = (hay, needle) => hay.split(needle).length - 1;
+    for (const n of names) {
+        const c = 'call2_' + n;
+        const lit = 'function ' + c + '(a, b, k) {';
+        if (cnt(src, '\n' + lit + '\n') !== 1) { out.push(c + ': literal "' + lit + '" count != 1'); continue; }
+        const m = new RegExp('\\nfunction ' + c + '\\(a, b, k\\) \\{\\n([^}]*)\\n\\}').exec(src);
+        if (!m) { out.push(c + ': no body'); continue; }
+        const body = m[1];
+        const h = 'H_' + c;
+        const a = new RegExp('^    const r0 = ' + n + '\\(a, 0, a\\.length, QX\\w+\\[k\\], '
+            + h + '\\[0\\]\\); ' + h + '\\[0\\] = r0;$', 'm');
+        const b = new RegExp('^    const r1 = ' + n + '\\(b, 0, b\\.length, QY\\w+\\[k\\], '
+            + h + '\\[1\\]\\); ' + h + '\\[1\\] = r1;$', 'm');
+        if (cnt(body, n + '(a, 0, a.length, QX') !== 1) out.push(c + ': channel a call count != 1');
+        if (cnt(body, n + '(b, 0, b.length, QY') !== 1) out.push(c + ': channel b call count != 1');
+        if (!a.test(body)) out.push(c + ': channel a does not read and write its own slot ' + h + '[0]');
+        if (!b.test(body)) out.push(c + ': channel b does not read and write its own slot ' + h + '[1]');
+        if (cnt(body, h + '[0]') !== 2 || cnt(body, h + '[1]') !== 2) out.push(c + ': slot use count != 2 + 2');
+        if (cnt(src, 'const ' + h + ' = new Int32Array(2);') !== 1) {
+            out.push(c + ': slot array ' + h + ' not declared once as Int32Array(2)');
+        }
+    }
+    const initLit = "const init = name.startsWith('call2_segmentHint') ? -1 : 0;\n"
+        + '        hs[0] = init;\n        hs[1] = init;';
+    if (cnt(src, initLit) !== 1) {
+        out.push('call2_segmentHint: -1 start of the slot walk (init, hs[0], hs[1]) not pinned once');
+    }
+    return out;
+}
+
+test('call2_ source shape: literal, one call per channel, own hint slot (pure source read)', () => {
+    assert.equal(EXPECT.channels2.length, 10);
+    const SRC = readFileSync(DRIVER, 'utf8');
+    assert.deepEqual(call2SrcProblems(SRC, EXPECT.channels2), []);
+});
+
+test('control: call2_ source shape fails a swapped slot index, naming the caller', () => {
+    const SRC = readFileSync(DRIVER, 'utf8');
+    for (const n of EXPECT.channels2) {
+        const h = 'H_call2_' + n;
+        const from = ', ' + h + '[1]); ' + h + '[1] = r1;';
+        assert.equal(SRC.split(from).length, 2, 'no unique channel-b line for ' + n);
+        const bad = SRC.replace(from, ', ' + h + '[0]); ' + h + '[1] = r1;');
+        const got = call2SrcProblems(bad, EXPECT.channels2);
+        assert.ok(got.length >= 1 && got.every((p) => p.startsWith('call2_' + n + ':')), n + ': ' + got.join(' | '));
+    }
+    const renamed = SRC.replace('\nfunction call2_segmentHintF32(a, b, k) {',
+        '\nfunction call2_segmentHintF32(a, b, c) {');
+    assert.notEqual(renamed, SRC);
+    assert.deepEqual(call2SrcProblems(renamed, EXPECT.channels2).map((p) => p.split(':')[0]), ['call2_segmentHintF32']);
+});
+
+test('control: edgesOf throws on an undefined channels list; null stays every row', () => {
+    assert.throws(() => edgesOf(EXPECT.rows, undefined, 'call2_', 2), /names must be null or an array/);
+    assert.throws(() => edgesOf(EXPECT.rows, 'call2_', 'x', 2), /names must be null or an array/);
+    assert.equal(edgesOf(EXPECT.rows, null).length, 75);
+    assert.equal(edgesOf(EXPECT.rows, EXPECT.channels2, 'call2_', 2).length, 25);
 });

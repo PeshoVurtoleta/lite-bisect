@@ -29,12 +29,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `package.json`: `publishConfig.access` is `public`; `repository.url` is `git+https://...` (`npm pkg fix`); the
-  description names the hinted upper bound and segment searches.
+  description names the hinted upper bound and segment searches (one "segment", families worded as in the README
+  opening).
+- `Bisect.js` header comment only (no code change): the NaN-query sentence now also states that `segment` /
+  `segmentHint` return `lo - 1` and `nearest` returns `lo`; the HeapNumber sentence says "on Node".
 
 ### Gates / Tests
 
-- `npm test`: 391 tests, 391 pass. Mutants: 146 rows (28 per type x 5 types + 3 rounded-tie + 3 infinity), all
-  killed. Coverage: 100% lines (563 / 563), branches (317 / 317), functions (47 / 47). Counts from the 1.1 cycle's `npm run verify` (2026-11-24, node v26.8.2, darwin arm64, host QUIET, one run).
+- `test/abgate-boundary.test.mjs` (new): verdict boundary rows B1-B10 of the A/B gate (ported from LitePerfGate
+  `r0-verdict-parity.mjs` 16693c6e), 10 must-fail comparator-flip mutants and an A/A control, run against
+  `bench/ab-gate.mjs --verdict-file -` (untimed). `bench/ab-gate.mjs` is untouched and its sha256 (7e0f9262) is pinned.
+- `test/Bisect.docs.test.mjs`: a roster row holds the 47 export names as a literal list; a name missing from the
+  module, README or `llms.txt` now fails.
+- `test/Bisect.inline.test.mjs`: a `call2_` source-shape row, and `edgesOf` throws on an undefined list.
+
+- `npm test`: 418 tests, 418 pass. Mutants: 146 rows (28 per type x 5 types + 3 rounded-tie + 3 infinity), all
+  killed. Coverage: 100% lines, 100% branches, 47 / 47 functions (denominators not quoted: LEDGER C15). Counts from the burst-closing `npm run verify` (`.handoff/fillers/verify.log`, 2026-11-24T07:52:46Z..07:56:59Z, exit 0, node v26.8.2, darwin arm64, host PRELIMINARY (load1 3.40 at start vs baseline 2.21), one run; the mutant rows were last read in the 1.1 cycle's verify).
 - Torture: phase 1 4096 cycles, 184320 / 184320 checks; phase 2 45 / 45 lanes x 200000 ops per lane.
 - Alloc gate: 225 lanes (45 kernels). Bytecode gate, exact: `upperBoundHint<T>` 212 B, `segmentHint<T>` 31 B, five
   copies equal.

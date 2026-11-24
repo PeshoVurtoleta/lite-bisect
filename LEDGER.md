@@ -393,7 +393,8 @@ on these kernels. No single green gate authorises a release.
 - **Root cause:** a measured channel with no threshold (the B4 shape again); short-lived allocation moves minor GCs
   only.
 - **Evidence:**
-  .handoff/archive/1.0.0/audit/2026-11-11-bisect/cross-opus/CROSS.md (17 / 17 audited runs minor = 0; pinned 1 MB: the plant
+  .handoff/archive/1.0.0/audit/2026-11-11-bisect/cross-opus/CROSS.md (17 / 17 audited runs minor = 0; pinned 1 MB:
+  the plant
   trips); host macOS arm64, node v26.8.2, load1 1.3 .. 2.6 as stated there.
 - **Law:** 9. Fix: steady `{ maxMajor: 0, maxMinor: 0 }`; `npm run torture` passes --no-concurrent-recompilation
   --min-semi-space-size=1 --max-semi-space-size=1 (AU-R5a "Accept the flag (Recommended)": without the tier flag the
@@ -800,7 +801,8 @@ on these kernels. No single green gate authorises a release.
 - **Root cause:** a double passed as an argument across a real call is a HeapNumber (C2, I8); NaN read from a typed
   array is not a Smi, and lo / hi (-0) and the hint are arguments too. The old sentence named the query only.
 - **Evidence:**
-  .handoff/archive/1.0.0/audit/2026-11-11-bisect/cross-fable/CROSS.md and cross-repro.mjs (`--d4`, lanes smiq_nan_from_f64
+  .handoff/archive/1.0.0/audit/2026-11-11-bisect/cross-fable/CROSS.md and cross-repro.mjs (`--d4`, lanes
+  smiq_nan_from_f64
   16.03 vs smiq_nan_literal 0.03 B/op; flags in its header), cross-opus/CROSS.md (2 runs, load1 2.58); host macOS
   arm64, node v26.8.2.
 - **Law:** 8. Fix: the AU-R3 sentence in Bisect.js / Bisect.d.ts / README / llms.txt / the docs test QBOX literal (one
@@ -923,6 +925,29 @@ on these kernels. No single green gate authorises a release.
   test/gates/bytecode.test.mjs (the 213 B / 32 B controls fail exactly their row and the copies check).
   Reopens with: a V8 that changes how module variables load (the "==" rows are then re-derived, not re-measured
   into place).
+
+### C15. The c8 branch denominator follows the test set, not Bisect.js *(MEASURED 2026-11-24; RULED "Reword, no denominator" (maintainer, AskUserQuestion 2026-11-24, FILLERS burst))*
+- **What happened:** the docs quoted "branches (317 / 317)". `npm run coverage` on HEAD 5cd73db read Branches 317 / 317
+  in 3 of 3 runs. With the coverage glob minus test/Bisect.docs.test.mjs (on a working tree whose Bisect.js header
+  gained one comment line, sha 003f726a; generated region byte-identical to HEAD) it read 315 / 315; with the docs test,
+  317 / 317 on the same tree. The two extra branch ranges (c8 json branchMap, present only when the docs test runs) are
+  Bisect.js:53:17-55:18 (upperBoundBranchlessF64: the block after `if (n === 0) return lo;`) and Bisect.js:547-548
+  (assertRange: the throw path after `return;`). The 1.1 cycle's pre-docs measure pass read 316 with the docs
+  export-names row red, on the pre-BB4 README (fewer snippets; cause UNVERIFIED, .handoff/seghint-1.1/qa/qa.md:19).
+  Lines moved 563 -> 564 with the one-line header edit (c8 counts physical lines), so "563 / 563" is also not stable.
+- **Root cause:** likely, UNVERIFIED: V8 block coverage reports a nested range only where its count differs from its
+  parent's, and c8 unions ranges over every test process, so the denominator is a property of the test set's
+  execution counts, not of Bisect.js. Percentages stay at 100% in every run.
+- **Evidence:** .handoff/fillers/cov-1.log, cov-2.log, cov-3.log (3 full runs on HEAD 5cd73db); one docs-excluded run
+  (315 / 315) and one paired full run (317 / 317) on the header-edited tree, .handoff/fillers/c8/ (README.txt with the
+  branchMap diff, nodocs-coverage-final.json, all-coverage-final.json); the 316 read:
+  .handoff/bb1b4/measure/coverage.log:477 (docs row red at :35); 564 lines: .handoff/fillers/verify.log (coverage step);
+  all untimed, node v26.8.2, darwin arm64, measured by the orchestrator 2026-11-24.
+- **Law:** none new. **Gate:** none for the denominator (ungated by ruling); c8 `--check-coverage --lines 100
+  --branches 100` gates both percentages. README Evidence table and CHANGELOG [Unreleased] now state 100% lines, 100%
+  branches and 47 / 47 functions without line or branch denominators. Older entries and ROADMAP rows that quote 317 /
+  563 are history and stay.
+  Reopens with: a doc that quotes a c8 denominator again (it must name the exact test glob and tree, or be reworded).
 
 ---
 

@@ -11,6 +11,11 @@
 // Checks:
 //   exports     every export name of Bisect.js (runtime Object.keys) appears in README.md and llms.txt as a
 //               whole identifier (not a prefix of a longer one).
+//   roster      (QA gap) a committed LITERAL ROSTER of the 47 export names (typed from Bisect.d.ts, never computed
+//               from Bisect.js in the run that checks it, LEDGER law 9): the sorted runtime Object.keys of
+//               Bisect.js deep-equals the sorted ROSTER (a missing OR an extra export fails, naming it), and every
+//               ROSTER name appears in README.md and llms.txt as a whole identifier. The 'exports' check above
+//               cannot fail on a missing export (its names come from the module itself); this one can.
 //   Q-BOX       the C2 sentence below, held here as a LITERAL (never read from Bisect.js), appears whole on
 //               ONE line of README.md, llms.txt, Bisect.d.ts and Bisect.js (4 / 4).
 //   never       "never inline" (any case, any whitespace, also "never inlines / inlined / inlining"): 0 hits
@@ -70,6 +75,21 @@ const SPAWN_MS = 120000;
 const MOD = await import(pathToFileURL(BISECT).href);
 const NAMES = Object.keys(MOD);
 
+// The 47 export names of Bisect.d.ts, typed by hand (45 kernels + assertRange + assertSorted).
+const ROSTER = [
+    'lowerBoundBranchlessF64', 'upperBoundBranchlessF64', 'lowerBoundBranchyF64',
+    'upperBoundBranchyF64', 'lowerBoundHintF64', 'segmentF64', 'nearestF64', 'upperBoundHintF64',
+    'segmentHintF64', 'lowerBoundBranchlessF32', 'upperBoundBranchlessF32', 'lowerBoundBranchyF32',
+    'upperBoundBranchyF32', 'lowerBoundHintF32', 'segmentF32', 'nearestF32', 'upperBoundHintF32',
+    'segmentHintF32', 'lowerBoundBranchlessU32', 'upperBoundBranchlessU32', 'lowerBoundBranchyU32',
+    'upperBoundBranchyU32', 'lowerBoundHintU32', 'segmentU32', 'nearestU32', 'upperBoundHintU32',
+    'segmentHintU32', 'lowerBoundBranchlessU16', 'upperBoundBranchlessU16', 'lowerBoundBranchyU16',
+    'upperBoundBranchyU16', 'lowerBoundHintU16', 'segmentU16', 'nearestU16', 'upperBoundHintU16',
+    'segmentHintU16', 'lowerBoundBranchlessI32', 'upperBoundBranchlessI32', 'lowerBoundBranchyI32',
+    'upperBoundBranchyI32', 'lowerBoundHintI32', 'segmentI32', 'nearestI32', 'upperBoundHintI32',
+    'segmentHintI32', 'assertRange', 'assertSorted',
+];
+
 // ---- the check functions --------------------------------------------------------------------------
 
 function loadDocs(dir, files) {
@@ -85,6 +105,19 @@ function loadDocs(dir, files) {
 
 function missingNames(text, names) {
     return names.filter((n) => !new RegExp('(^|[^A-Za-z0-9_$])' + n + '([^A-Za-z0-9_$]|$)').test(text));
+}
+
+function rosterProblems(keys, roster, texts) {
+    const out = [];
+    const have = new Set(keys);
+    const want = new Set(roster);
+    for (const n of roster) if (!have.has(n)) out.push('module is missing export ' + n);
+    for (const k of keys) if (!want.has(k)) out.push('module has export ' + k + ' not in ROSTER');
+    for (const f of NAME_FILES) {
+        const m = missingNames(texts.get(f) ?? '', roster);
+        if (m.length) out.push(f + ' is missing ' + m.join(', '));
+    }
+    return out;
 }
 
 function hasQboxLine(text) {
@@ -341,6 +374,13 @@ test('docs: every export name in README.md and llms.txt', () => {
     assert.deepEqual(slice('names'), []);
 });
 
+test('docs: roster -- the 47 literal export names equal the module keys and appear in README.md and llms.txt', () => {
+    assert.equal(ROSTER.length, 47);
+    assert.equal(new Set(ROSTER).size, 47);
+    assert.deepEqual([...Object.keys(MOD)].sort(), [...ROSTER].sort());
+    assert.deepEqual(rosterProblems(Object.keys(MOD), ROSTER, new Map(NAME_FILES.map((f) => [f, textOf(f)]))), []);
+});
+
 test('docs: the Q-BOX sentence on one line 4 / 4', () => {
     assert.deepEqual(slice('qbox'), []);
 });
@@ -472,6 +512,19 @@ test('control: export names -- a dropped name and a prefix-only name are missing
     assert.deepEqual(missingNames(all, NAMES), []);
     assert.deepEqual(missingNames(NAMES.filter((n) => n !== 'nearestI32').join(' '), NAMES), ['nearestI32']);
     assert.deepEqual(missingNames(all.replace('nearestI32', 'nearestI32x'), NAMES), ['nearestI32']);
+});
+
+test('control: roster -- a dropped module key and a name absent from a doc fail, naming it', () => {
+    const docs = new Map(NAME_FILES.map((f) => [f, ROSTER.join(' ')]));
+    assert.deepEqual(rosterProblems(ROSTER, ROSTER, docs), []);
+    assert.deepEqual(rosterProblems(ROSTER.filter((n) => n !== 'segmentHintI32'), ROSTER, docs),
+        ['module is missing export segmentHintI32']);
+    assert.deepEqual(rosterProblems([...ROSTER, 'bogusExport'], ROSTER, docs),
+        ['module has export bogusExport not in ROSTER']);
+    const noLlms = new Map(docs).set('llms.txt', ROSTER.filter((n) => n !== 'upperBoundHintU16').join(' '));
+    assert.deepEqual(rosterProblems(ROSTER, ROSTER, noLlms), ['llms.txt is missing upperBoundHintU16']);
+    const prefix = new Map(docs).set('README.md', ROSTER.join(' ').replace('assertRange', 'assertRangeX'));
+    assert.deepEqual(rosterProblems(ROSTER, ROSTER, prefix), ['README.md is missing assertRange']);
 });
 
 test('control: Q-BOX -- split over two lines or one word changed is not found', () => {
