@@ -1,6 +1,6 @@
 {
   "name": "@zakkster/lite-bisect",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Zero-GC binary search kernels for sorted typed arrays: lower / upper bound (branchless and branchy), galloping hint searches (lower and upper bound), segment (also with a hint) and nearest, one monomorphic copy per array type (Float64, Float32, Uint32, Uint16, Int32).",
   "author": "Zahary Shinikchiev <shinikchiev@yahoo.com>",
   "license": "MIT",

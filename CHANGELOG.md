@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-24
+
 ### Added
 
 - 10 exports in `Bisect.js` (47 in all: 9 kernel families x 5 array types = 45 kernels, plus 2 cold asserts),
@@ -33,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   opening).
 - `Bisect.js` header comment only (no code change): the NaN-query sentence now also states that `segment` /
   `segmentHint` return `lo - 1` and `nearest` returns `lo`; the HeapNumber sentence says "on Node".
+- README / `llms.txt`: a `segmentHint*` caller example for a row table with a zero-height leading row. At `pos = 0`
+  the segment is the first row with a nonzero height, so a clamp of the `lo - 1` result alone returns 1 where row 0
+  is wanted. The example guards `pos` first (`!(pos > 0)`, which also catches NaN), keeps `s` as the raw result, and
+  shows that `pos >=` the total returns the row count. The docs test checks every value.
 
 ### Gates / Tests
 
@@ -42,6 +48,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `test/Bisect.docs.test.mjs`: a roster row holds the 47 export names as a literal list; a name missing from the
   module, README or `llms.txt` now fails.
 - `test/Bisect.inline.test.mjs`: a `call2_` source-shape row, and `edgesOf` throws on an undefined list.
+- Release A/B (STATISTICAL): ab.yml run 43145179770 also gates 1.1.0 (ruling AB-G3a): the three gated F64 kernel
+  bodies are byte-identical to 1.0.0 (AB-G2 parity) and `bench/ab-gate.mjs` is unchanged since the re-judging gate
+  (3621f69, sha256 7e0f9262), so no new dispatch. `upperBoundHint*` and `segmentHint*` make no speed claim.
 
 - `npm test`: 418 tests, 418 pass. Mutants: 146 rows (28 per type x 5 types + 3 rounded-tie + 3 infinity), all
   killed. Coverage: 100% lines, 100% branches, 47 / 47 functions (denominators not quoted: LEDGER C15). Counts from the burst-closing `npm run verify` (`.handoff/fillers/verify.log`, 2026-11-24T07:52:46Z..07:56:59Z, exit 0, node v26.8.2, darwin arm64, host PRELIMINARY (load1 3.40 at start vs baseline 2.21), one run; the mutant rows were last read in the 1.1 cycle's verify).

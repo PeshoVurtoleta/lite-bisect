@@ -283,6 +283,31 @@ s = segmentHintF64(times, 0, 4, 99, s); // -> 3
 s = segmentHintF64(times, 0, 4, -3, s); // -> -1
 ```
 
+A row table (a virtual list) with a zero-height leading row: `offsets[i]` is the top of row `i`, so the segment is the last `i` with `offsets[i] <= pos`. At `pos = 0` that is the last `i` with `offsets[i] = 0` (here row 1, the first row with a nonzero height), not row 0, so clamping `r < 0 ? 0 : r` returns 1 here. Guard `pos` first; `!(pos > 0)` also catches NaN, which would otherwise give -1. Keep `s` as the previous raw result; an early return leaves it alone. At `pos >= offsets[3]` (the total, here 30) the result is 3, the row count, one past the last row: where the caller needs a row index, clamp the returned value, not `s`.
+
+```js
+import { segmentHintF64 } from "@zakkster/lite-bisect";
+
+const offsets = new Float64Array([0, 0, 10, 30]); // three rows, heights 0, 10, 20
+const r = segmentHintF64(offsets, 0, 4, 0, -1); // -> 1
+(r < 0 ? 0 : r); // -> 1
+
+let s = -1;
+function rowAt(pos) {
+    if (!(pos > 0)) return 0;
+    s = segmentHintF64(offsets, 0, 4, pos, s);
+    return s;
+}
+rowAt(0); // -> 0
+rowAt(NaN); // -> 0
+rowAt(-5); // -> 0
+rowAt(5); // -> 1
+rowAt(29); // -> 2
+rowAt(0); // -> 0
+rowAt(10); // -> 2
+rowAt(30); // -> 3
+```
+
 Where a lower bound is what your caller needs and the stream is monotone, the previous answer is a good hint; whether `lowerBoundHint*` beats the plain kernel on your stream is a measurement for your caller (see the table above: STATISTICAL on F64, n <= 65,536, two CPUs; your stream, CPU and array type are still a measurement).
 
 ---
@@ -372,7 +397,7 @@ npm run size           # npm pack file list + size budgets (test/gates/size-budg
 npm run verify         # test + torture + coverage + size + gates:local (fail-fast)
 ```
 
-Statistical claims: the hint versus branchless and branchless versus branchy speed words in the choice table are gated once per release by the hosted A/B (`bench/ab-gate.mjs`, run by `.github/workflows/ab.yml`, ubuntu-latest + macos-latest, dispatch-only; in the source repository, not the tarball). 1.0.0 is gated by run 43145179770 (VERDICT PASS gated=13/13 on both CPUs, F64 only; Tier: STATISTICAL). The length switch and the 92 B body are not gated (PRELIMINARY, see Design decisions). `upperBoundHint*` and `segmentHint*` carry no speed claim.
+Statistical claims: the hint versus branchless and branchless versus branchy speed words in the choice table are gated once per release by the hosted A/B (`bench/ab-gate.mjs`, run by `.github/workflows/ab.yml`, ubuntu-latest + macos-latest, dispatch-only; in the source repository, not the tarball). 1.0.0 is gated by run 43145179770 (VERDICT PASS gated=13/13 on both CPUs, F64 only; Tier: STATISTICAL); the same run gates 1.1.0, whose three gated F64 kernel bodies are byte-identical to 1.0.0 and whose `bench/ab-gate.mjs` is unchanged (ruling AB-G3a). The length switch and the 92 B body are not gated (PRELIMINARY, see Design decisions). `upperBoundHint*` and `segmentHint*` carry no speed claim.
 
 ---
 

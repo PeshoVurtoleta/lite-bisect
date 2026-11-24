@@ -100,6 +100,30 @@ const n = nearestF64(a, 0, 5, 4);                // -> 2
 const t = segmentHintF64(a, 0, 5, 6, s);         // -> 3
 ```
 
+Row table with a zero-height leading row (virtual list): segment = last i with offsets[i] <= pos, so at pos = 0
+it is the last i with offsets[i] = 0 (here row 1, the first nonzero-height row), and the clamp `r < 0 ? 0 : r`
+returns 1, not 0. Guard pos first (`!(pos > 0)` also catches NaN); keep s = the previous raw result. At pos >= the
+total (offsets[3] = 30) the result is 3, the row count: clamp the return, not s, where a row index is needed.
+
+```js
+import { segmentHintF64 } from "@zakkster/lite-bisect";
+
+const offsets = new Float64Array([0, 0, 10, 30]); // three rows, heights 0, 10, 20
+const r = segmentHintF64(offsets, 0, 4, 0, -1); // -> 1
+(r < 0 ? 0 : r); // -> 1
+let s = -1;
+function rowAt(pos) {
+    if (!(pos > 0)) return 0;
+    s = segmentHintF64(offsets, 0, 4, pos, s);
+    return s;
+}
+rowAt(NaN); // -> 0
+rowAt(5); // -> 1
+rowAt(29); // -> 2
+rowAt(0); // -> 0
+rowAt(30); // -> 3
+```
+
 ## Gates (deterministic unless stated)
 
 oracle per type (4 seeds) and a hinted-kernel sweep, boundary table, mutants (146 rows, all killed), torture with a
